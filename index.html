@@ -133,7 +133,7 @@ footer a{color:var(--accent)}
   </section>
 
   <footer>
-    <span>Fuentes: <a href="https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables.asp" target="_blank" rel="noopener">BCRA · Índice para Contratos de Locación (variable 40)</a> · <a href="https://datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26" target="_blank" rel="noopener">INDEC · IPC Nivel General Nacional (datos.gob.ar)</a>. Si datos.gob.ar no responde, el IPC se toma de la serie "Inflación mensual" del BCRA (variable 27).</span>
+    <span>Fuentes, en orden de uso. ICL: <a href="https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables.asp" target="_blank" rel="noopener">API del BCRA (variable 40)</a> y, si no responde, una copia diaria guardada en este sitio. IPC: <a href="https://datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26" target="_blank" rel="noopener">INDEC vía datos.gob.ar</a>, inflación mensual del BCRA (variable 27), <a href="https://argentinadatos.com/" target="_blank" rel="noopener">ArgentinaDatos</a> y la copia diaria. Si se usa un respaldo, aparece marcado en amarillo.</span>
     <span>El INDEC publica el IPC de cada mes a mediados del mes siguiente; hasta entonces el ajuste que lo necesita figura como pendiente. El cálculo es orientativo: lo que vale es lo pactado en el contrato.</span>
   </footer>
 </div>
@@ -149,7 +149,7 @@ footer a{color:var(--accent)}
   const fmtIdx = v => v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:4});
 
   let tipo = "ICL";
-  const cache = { icl:null, iclFrom:null, ipc:null, ipcSrc:null };
+  const cache = { icl:null, iclFrom:null, ipc:null };
 
   // ---------- fechas (todas en UTC, formato YYYY-MM-DD) ----------
   const toD = s => { const [y,m,d] = s.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)); };
@@ -167,36 +167,73 @@ footer a{color:var(--accent)}
   const today = () => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; };
 
   // ---------- datos ----------
+  // Copia diaria de los índices que mantiene GitHub Actions en el repo (último respaldo)
+  const COPIA = /\.github\.io$/.test(location.hostname) ? "data/" : "https://ezefacosta-wyk.github.io/calculadora-alquiler/data/";
+  const ARGDATOS = "https://api.argentinadatos.com/v1/finanzas/indices/inflacion";
+
   // Reintenta ante errores del servidor (5xx, 429) o fallas de red, con espera creciente
-  async function getJSON(url){
-    const fuente = url.includes("bcra.gob.ar") ? "BCRA" : "datos.gob.ar";
+  async function getJSON(url, intentos=3){
     let ultimo = "";
-    for(let intento=0; intento<4; intento++){
-      if(intento) await new Promise(r => setTimeout(r, 800 * 2 ** (intento-1)));
+    for(let intento=0; intento<intentos; intento++){
+      if(intento) await new Promise(r => setTimeout(r, 700 * 2 ** (intento-1)));
       try{
         const r = await fetch(url, {cache:"no-store"});
         if(r.ok) return await r.json();
-        ultimo = `la API de ${fuente} respondió HTTP ${r.status}`;
+        ultimo = `HTTP ${r.status}`;
         if(r.status < 500 && r.status !== 429) break;
-      }catch(e){ ultimo = `no se pudo conectar con ${fuente}`; }
+      }catch(e){ ultimo = "sin conexión"; }
     }
     throw new Error(ultimo);
   }
 
-  async function loadICL(desde){
-    if(cache.icl && cache.iclFrom <= desde) return cache.icl;
+  // Prueba las fuentes en orden y devuelve la primera que responde con datos
+  async function primeraQueFunciona(fuentes){
+    const fallas = [];
+    for(const [i,f] of fuentes.entries()){
+      try{
+        const res = await f.cargar();
+        if(!res.map || !res.map.size) throw new Error("sin datos");
+        return { ...res, fuente:f.nombre, respaldo:i>0, fallas };
+      }catch(e){ fallas.push(`${f.nombre}: ${e.message}`); }
+    }
+    const err = new Error("ninguna fuente respondió"); err.fallas = fallas; throw err;
+  }
+
+  async function bcraSerie(id, desde){
     const hasta = today(); const map = new Map(); let offset = 0;
     for(let i=0;i<10;i++){
-      const j = await getJSON(`${BCRA}40?desde=${desde}&hasta=${hasta}&limit=1000&offset=${offset}`);
+      const j = await getJSON(`${BCRA}${id}?desde=${desde}&hasta=${hasta}&limit=1000&offset=${offset}`);
       const det = (j.results && j.results[0] && j.results[0].detalle) || [];
       det.forEach(x => map.set(x.fecha.slice(0,10), Number(x.valor)));
       const count = j.metadata && j.metadata.resultset ? j.metadata.resultset.count : det.length;
       offset += det.length;
       if(!det.length || offset >= count) break;
     }
-    const dates = [...map.keys()].sort();
-    if(!dates.length) throw new Error("El BCRA no devolvió valores de ICL para esas fechas.");
-    cache.icl = { map, dates, last: dates[dates.length-1] };
+    return map;
+  }
+  // Convierte variaciones mensuales (%) en un índice encadenado; la base no importa porque solo se usan cocientes
+  function indiceDesdeVariaciones(pares){
+    const orden = pares.filter(([k,v]) => Number.isFinite(v)).sort((a,b) => a[0] < b[0] ? -1 : 1);
+    const map = new Map(); if(!orden.length) return map;
+    let idx = 100; map.set(monthShift(orden[0][0],-1), idx);
+    orden.forEach(([k,p]) => { idx = idx*(1+p/100); map.set(k, idx); });
+    return map;
+  }
+  async function leerCopia(nombre){
+    const j = await getJSON(COPIA + nombre, 2);
+    const pares = Object.entries(j.datos || {}).map(([k,v]) => [k, Number(v)]);
+    const map = j.tipo === "variacion_mensual" ? indiceDesdeVariaciones(pares) : new Map(pares);
+    return { map, copia:(j.actualizado||"").slice(0,10), origen:j.fuente };
+  }
+
+  async function loadICL(desde){
+    if(cache.icl && cache.iclFrom <= desde) return cache.icl;
+    const res = await primeraQueFunciona([
+      { nombre:"BCRA", cargar: async () => ({ map: await bcraSerie(40, desde) }) },
+      { nombre:"Copia diaria del BCRA", cargar: () => leerCopia("icl.json") },
+    ]);
+    const dates = [...res.map.keys()].sort();
+    cache.icl = { ...res, dates, last: dates[dates.length-1] };
     cache.iclFrom = desde;
     return cache.icl;
   }
@@ -209,28 +246,35 @@ footer a{color:var(--accent)}
 
   async function loadIPC(){
     if(cache.ipc) return cache.ipc;
-    try{
-      const j = await getJSON(`${DATOS}&start_date=2017-01-01`);
-      const map = new Map(); (j.data||[]).forEach(([f,v]) => { if(v!=null) map.set(monthKey(f), Number(v)); });
-      if(!map.size) throw new Error("vacío");
-      cache.ipcSrc = "INDEC (datos.gob.ar)";
-      cache.ipc = finishIPC(map);
-    }catch(e){
-      // respaldo: inflación mensual (%) publicada por el BCRA, compuesta en un índice
-      const j = await getJSON(`${BCRA}27?desde=2017-01-01&limit=1000`);
-      const det = ((j.results&&j.results[0]&&j.results[0].detalle)||[]).map(x=>({k:monthKey(x.fecha), p:Number(x.valor)})).sort((a,b)=>a.k<b.k?-1:1);
-      if(!det.length) throw new Error("No se pudo obtener el IPC de ninguna fuente oficial.");
-      const map = new Map(); let idx = 100; map.set(monthShift(det[0].k,-1), idx);
-      det.forEach(x => { idx = idx*(1+x.p/100); map.set(x.k, idx); });
-      cache.ipcSrc = "BCRA (inflación mensual, respaldo)";
-      cache.ipc = finishIPC(map);
-    }
+    const res = await primeraQueFunciona([
+      { nombre:"INDEC (datos.gob.ar)", cargar: async () => {
+          const j = await getJSON(`${DATOS}&start_date=2017-01-01`);
+          const map = new Map(); (j.data||[]).forEach(([f,v]) => { if(v!=null) map.set(monthKey(f), Number(v)); });
+          return { map };
+      }},
+      { nombre:"BCRA (inflación mensual)", cargar: async () => {
+          const m = await bcraSerie(27, "2017-01-01");
+          return { map: indiceDesdeVariaciones([...m].map(([f,v]) => [monthKey(f), v])) };
+      }},
+      { nombre:"ArgentinaDatos (INDEC)", cargar: async () => {
+          const j = await getJSON(ARGDATOS);
+          return { map: indiceDesdeVariaciones((Array.isArray(j)?j:[]).filter(x => x.fecha >= "2017-01").map(x => [monthKey(x.fecha), Number(x.valor)])) };
+      }},
+      { nombre:"Copia diaria", cargar: () => leerCopia("ipc.json") },
+    ]);
+    cache.ipc = { ...res, ...finishIPC(res.map) };
     return cache.ipc;
   }
   function finishIPC(map){
     const keys=[...map.keys()].sort(); const last=keys[keys.length-1];
     const prev=map.get(monthShift(last,-1));
     return { map, last, lastVar: prev ? map.get(last)/prev-1 : null };
+  }
+  function chipFuente(d){
+    const esc = t => String(t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const texto = d.copia ? `${d.fuente} del ${fmtDate(d.copia)}${d.origen ? " · origen "+d.origen : ""}` : `Fuente: ${d.fuente}`;
+    const titulo = d.fallas.length ? ` title="${esc("Fallaron antes: " + d.fallas.join(" | "))}"` : "";
+    return `<span class="chip ${d.respaldo ? "warn" : ""}"${titulo}>${d.respaldo ? "Respaldo · " : ""}${esc(texto)}</span>`;
   }
 
   // ---------- cálculo ----------
@@ -316,18 +360,21 @@ footer a{color:var(--accent)}
         const icl=await loadICL(addDays(inicio,-10)); if(id!==runId) return;
         computeICL(icl,periods);
         chips.push(`<span class="chip"><span class="dot"></span>ICL ${fmtDate(icl.last)}: ${fmtIdx(icl.map.get(icl.last))}</span>`);
+        chips.push(chipFuente(icl));
       }else{
         const ipc=await loadIPC(); if(id!==runId) return;
         computeIPC(ipc,periods);
         chips.push(`<span class="chip"><span class="dot"></span>Último IPC: ${monthName(ipc.last)}${ipc.lastVar!=null?" · "+pct(ipc.lastVar):""}</span>`);
-        chips.push(`<span class="chip ${cache.ipcSrc.includes("respaldo")?"warn":""}">${cache.ipcSrc}</span>`);
+        chips.push(chipFuente(ipc));
       }
       chips.push(`<span class="chip">Consultado ${new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>`);
       render(periods,chips);
     }catch(e){
       if(id!==runId) return;
       $("err").hidden=false;
-      $("err").textContent = /HTTP 5\d\d/.test(e.message) ? `Falla temporal del servidor: ${e.message} tras varios intentos. Probá de nuevo en unos minutos con "Actualizar datos".` : `No se pudieron obtener los datos: ${e.message}. Revisá la conexión y tocá "Actualizar datos".`;
+      $("err").textContent = e.fallas
+        ? `No respondió ninguna fuente (${e.fallas.join("; ")}). Probá de nuevo en unos minutos con "Actualizar datos".`
+        : `No se pudieron procesar los datos: ${e.message}.`;
       $("res-delta").textContent="Sin datos de índices.";
       $("status").innerHTML=`<span class="chip err"><span class="dot"></span>Fuente no disponible</span>`;
     }finally{ if(id===runId) $("res").classList.remove("loading"); }

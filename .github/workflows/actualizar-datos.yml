@@ -1,0 +1,44 @@
+name: Actualizar copia de ICL e IPC
+
+on:
+  schedule:
+    # Todos los días a las 9:17 y 18:17 (hora de Argentina, UTC-3)
+    - cron: "17 12,21 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/actualizar_datos.py
+      - .github/workflows/actualizar-datos.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actualizar-datos
+  cancel-in-progress: false
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Descargar índices
+        run: python scripts/actualizar_datos.py
+
+      - name: Guardar cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898733+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "Sin cambios en los datos"
+          else
+            git commit -m "Actualizar copia de ICL e IPC"
+            git push
+          fi

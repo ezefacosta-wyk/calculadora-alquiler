@@ -3,9 +3,20 @@
 Página web estática que calcula los ajustes de un contrato de alquiler en Argentina según el índice pactado:
 
 - **ICL** (Índice para Contratos de Locación): API oficial del BCRA, variable 40.
-- **IPC** (nivel general nacional, INDEC): API de series de datos.gob.ar, con respaldo en la serie de inflación mensual del BCRA (variable 27).
+- **IPC** (nivel general nacional, INDEC): API de series de datos.gob.ar.
 
 Los datos se consultan en vivo desde el navegador cada vez que se abre la página. No necesita backend ni claves.
+
+## Fuentes de respaldo
+
+Si una fuente no responde (después de 3 intentos), la página pasa a la siguiente:
+
+| Índice | Orden de fuentes |
+|---|---|
+| ICL | API del BCRA → copia diaria (`data/icl.json`) |
+| IPC | datos.gob.ar (INDEC) → BCRA variable 27 → ArgentinaDatos → copia diaria (`data/ipc.json`) |
+
+La copia diaria la genera `scripts/actualizar_datos.py`, que corre con GitHub Actions dos veces por día (workflow *Actualizar copia de ICL e IPC*). Si en una corrida fallan todas las fuentes, se conserva la copia anterior. También se puede correr a mano desde la pestaña *Actions*.
 
 ## Uso
 
