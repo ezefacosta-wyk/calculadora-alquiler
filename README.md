@@ -18,6 +18,16 @@ Si una fuente no responde (después de 3 intentos), la página pasa a la siguien
 
 La copia diaria la genera `scripts/actualizar_datos.py`, que corre con GitHub Actions dos veces por día (workflow *Actualizar copia de ICL e IPC*). Si en una corrida fallan todas las fuentes, se conserva la copia anterior. También se puede correr a mano desde la pestaña *Actions*.
 
+## Proyección
+
+Para los ajustes que todavía no tienen datos publicados, la página puede estimarlos con:
+
+- **REM del BCRA** (por defecto): mediana de la inflación esperada para los próximos 12 meses (variable 29), convertida a tasa mensual. Si no está disponible, se usa la tendencia.
+- **Tendencia de 3 meses:** el ritmo promedio del propio índice (ICL o IPC) en los últimos 3 meses.
+- **Tasa mensual propia:** el porcentaje que cargue el usuario.
+
+Las filas proyectadas aparecen en cursiva con la etiqueta *Proyectado* y la cantidad de meses estimados.
+
 ## Uso
 
 1. Elegí el índice (ICL o IPC).

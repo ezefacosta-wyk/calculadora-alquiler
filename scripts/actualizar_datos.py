@@ -109,6 +109,16 @@ def main():
     else:
         errores += 1
 
+    # REM: mediana de inflación esperada a 12 meses, usada para proyectar
+    try:
+        valores = bcra_serie(29, "2024-01-01")
+        if not valores:
+            raise RuntimeError("sin valores")
+        guardar("rem.json", {"fuente": "BCRA, variable 29 (REM)", "tipo": "variacion_anual_esperada",
+                             "datos": dict(sorted(valores.items()))})
+    except Exception as e:  # noqa: BLE001
+        print(f"REM sin actualizar: {e}", file=sys.stderr)
+
     # Si fallan las dos series no se marca error: queda la copia anterior
     # y la próxima ejecución lo vuelve a intentar.
     print("Listo" if not errores else f"Terminó con {errores} serie(s) sin actualizar")

@@ -57,6 +57,11 @@ th.num{text-align:right}
 tr.pend td{color:var(--muted)}
 tr.cur td{background:var(--accent-soft)}
 .tag{font-size:.7rem;font-weight:600;padding:2px 7px;border-radius:5px;background:var(--warn-soft);color:var(--warn);white-space:nowrap}
+.tag.proy{background:transparent;color:var(--accent);border:1px dashed var(--accent)}
+tr.proy td{font-style:italic}
+tr.proy td.num{color:var(--muted)}
+.proj-line{font-size:.9rem;color:var(--muted)}
+.proj-line b{color:var(--ink);font-family:var(--mono);font-style:normal}
 .tag.ok{background:var(--accent-soft);color:var(--accent)}
 .sub{display:block;font-size:.75rem;color:var(--muted);font-family:var(--mono)}
 h2{font-family:var(--display);font-weight:500;font-size:1.15rem;margin:0 0 12px}
@@ -112,7 +117,19 @@ footer a{color:var(--accent)}
           <option value="2">Desfasados 2 meses</option>
         </select>
       </label>
+      <label for="proy">Proyección de ajustes futuros
+        <select id="proy">
+          <option value="rem" selected>Expectativa de inflación (REM del BCRA)</option>
+          <option value="tendencia">Tendencia de los últimos 3 meses</option>
+          <option value="propia">Tasa mensual propia</option>
+          <option value="no">Sin proyección</option>
+        </select>
+      </label>
+      <label for="tasa" id="lbl-tasa" hidden>Tasa mensual supuesta (%)
+        <input id="tasa" type="number" inputmode="decimal" min="-5" max="50" step="0.1" value="2">
+      </label>
     </div>
+    <p class="hint" id="hint-proy"></p>
     <p class="hint" id="hint">Ejemplo precargado. ICL: se divide el valor del índice el día del ajuste por el del día de inicio del período.</p>
   </section>
 
@@ -120,6 +137,7 @@ footer a{color:var(--accent)}
     <span class="eyebrow" id="res-label">Alquiler vigente</span>
     <span class="big" id="res-monto">—</span>
     <span class="delta" id="res-delta">Consultando índices…</span>
+    <span class="proj-line" id="res-proy" hidden></span>
     <div class="status" id="status"></div>
   </section>
 
@@ -133,7 +151,7 @@ footer a{color:var(--accent)}
   </section>
 
   <footer>
-    <span>Fuentes, en orden de uso. ICL: <a href="https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables.asp" target="_blank" rel="noopener">API del BCRA (variable 40)</a> y, si no responde, una copia diaria guardada en este sitio. IPC: <a href="https://datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26" target="_blank" rel="noopener">INDEC vía datos.gob.ar</a>, inflación mensual del BCRA (variable 27), <a href="https://argentinadatos.com/" target="_blank" rel="noopener">ArgentinaDatos</a> y la copia diaria. Si se usa un respaldo, aparece marcado en amarillo.</span>
+    <span>Fuentes, en orden de uso. ICL: <a href="https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables.asp" target="_blank" rel="noopener">API del BCRA (variable 40)</a> y, si no responde, una copia diaria guardada en este sitio. IPC: <a href="https://datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26" target="_blank" rel="noopener">INDEC vía datos.gob.ar</a>, inflación mensual del BCRA (variable 27), <a href="https://argentinadatos.com/" target="_blank" rel="noopener">ArgentinaDatos</a> y la copia diaria. Si se usa un respaldo, aparece marcado en amarillo. La proyección usa la <a href="https://www.bcra.gob.ar/PublicacionesEstadisticas/Relevamiento_Expectativas_de_Mercado.asp" target="_blank" rel="noopener">mediana del REM del BCRA</a> (variable 29) convertida a tasa mensual.</span>
     <span>El INDEC publica el IPC de cada mes a mediados del mes siguiente; hasta entonces el ajuste que lo necesita figura como pendiente. El cálculo es orientativo: lo que vale es lo pactado en el contrato.</span>
   </footer>
 </div>
@@ -149,7 +167,7 @@ footer a{color:var(--accent)}
   const fmtIdx = v => v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:4});
 
   let tipo = "ICL";
-  const cache = { icl:null, iclFrom:null, ipc:null };
+  const cache = { icl:null, iclFrom:null, ipc:null, rem:null };
 
   // ---------- fechas (todas en UTC, formato YYYY-MM-DD) ----------
   const toD = s => { const [y,m,d] = s.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)); };
@@ -277,48 +295,120 @@ footer a{color:var(--accent)}
     return `<span class="chip ${d.respaldo ? "warn" : ""}"${titulo}>${d.respaldo ? "Respaldo · " : ""}${esc(texto)}</span>`;
   }
 
+  // ---------- proyección ----------
+  const DIAS_MES = 30.4375;
+  const diasEntre = (a,b) => (toD(b)-toD(a))/864e5;
+  const mesesEntre = (a,b) => { const [ya,ma]=a.split("-").map(Number), [yb,mb]=b.split("-").map(Number); return (yb-ya)*12+(mb-ma); };
+  const pctMes = r => (r*100).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}) + "% mensual";
+
+  // REM: mediana de la inflación esperada para los próximos 12 meses (BCRA, variable 29)
+  async function loadREM(){
+    if(cache.rem) return cache.rem;
+    const res = await primeraQueFunciona([
+      { nombre:"BCRA", cargar: async () => ({ map: await bcraSerie(29, addDays(today(), -400)) }) },
+      { nombre:"Copia diaria del BCRA", cargar: async () => {
+          const j = await getJSON(COPIA + "rem.json", 2);
+          return { map: new Map(Object.entries(j.datos||{}).map(([k,v]) => [k, Number(v)])), copia:(j.actualizado||"").slice(0,10) };
+      }},
+    ]);
+    const fechas = [...res.map.keys()].sort(); const fecha = fechas[fechas.length-1];
+    const anual = res.map.get(fecha);
+    cache.rem = { anual, fecha, r: Math.pow(1+anual/100, 1/12) - 1, fuente:res.fuente };
+    return cache.rem;
+  }
+
+  // Devuelve la tasa mensual a usar, o null si no se proyecta
+  async function tasaProyeccion(serie){
+    const modo = $("proy").value;
+    if(modo === "no") return null;
+    if(modo === "propia"){
+      const t = parseFloat($("tasa").value);
+      return Number.isFinite(t) ? { r:t/100, texto:`Proyección con tasa propia: ${pctMes(t/100)}` } : null;
+    }
+    if(modo === "rem"){
+      try{
+        const rem = await loadREM();
+        return { r:rem.r, texto:`Proyección REM ${monthShort(monthKey(rem.fecha))}: ${rem.anual.toLocaleString("es-AR")}% a 12 meses (${pctMes(rem.r)})` };
+      }catch(e){ /* sin REM: se usa la tendencia */ }
+    }
+    const r = tendencia(serie);
+    return r == null ? null : { r, texto:`Proyección por tendencia de 3 meses: ${pctMes(r)}${modo==="rem" ? " (REM no disponible)" : ""}` };
+  }
+  function tendencia(serie){
+    if(serie.tipo === "ICL"){
+      const desde = addDays(serie.last, -91); const a = iclAt(serie, desde);
+      return a ? Math.pow(serie.map.get(serie.last)/a.v, DIAS_MES/diasEntre(a.fecha, serie.last)) - 1 : null;
+    }
+    const prev = serie.map.get(monthShift(serie.last, -3));
+    return prev ? Math.pow(serie.map.get(serie.last)/prev, 1/3) - 1 : null;
+  }
+
   // ---------- cálculo ----------
-  function buildPeriods(){
+  function buildPeriods(proyectar){
     const inicio=$("inicio").value, N=+$("frec").value, dur=+$("dur").value;
     const out=[]; const hoy=today();
     for(let k=1; k*N < dur; k++){
       const fecha = addMonths(inicio, k*N);
       out.push({k, fecha, desde:addMonths(inicio,(k-1)*N), futuro: fecha>hoy});
-      if(fecha>hoy) break;
+      if(fecha>hoy && !proyectar) break;
     }
     return out;
   }
 
-  function computeICL(icl, periods){
+  function computeICL(icl, periods, proy){
+    // valor real o, si la fecha es posterior al último dato, proyectado
+    const valor = fecha => {
+      if(fecha <= icl.last) return iclAt(icl, fecha);
+      if(!proy) return iclAt(icl, fecha);
+      const v0 = icl.map.get(icl.last);
+      return { fecha, v: v0*Math.pow(1+proy.r, diasEntre(icl.last, fecha)/DIAS_MES), proy:true };
+    };
     for(const p of periods){
-      const a=iclAt(icl,p.desde); const b=iclAt(icl,p.fecha);
+      const a=valor(p.desde), b=valor(p.fecha);
       if(!a){ p.err="Sin ICL para la fecha de inicio (la serie empieza el 01/07/2020)."; continue; }
       p.a=a; p.b=b; p.factor=b.v/a.v;
-      p.estimado = p.futuro || !b.exact;
+      p.proyectado = !!(a.proy || b.proy);
+      p.estimado = !p.proyectado && (p.futuro || !b.exact);
+      if(p.proyectado){
+        const dias = Math.round(diasEntre(a.proy ? a.fecha : icl.last, p.fecha));
+        p.notaProy = `${Math.max(1, Math.round(dias/DIAS_MES))} ${Math.round(dias/DIAS_MES) === 1 ? "mes estimado" : "meses estimados"}`;
+      }
       p.detalle = `ICL ${fmtDate(a.fecha)}: ${fmtIdx(a.v)} → ${fmtDate(b.fecha)}: ${fmtIdx(b.v)}`;
     }
   }
-  function computeIPC(ipc, periods){
+  function computeIPC(ipc, periods, proy){
     const N=+$("frec").value, d=+$("desfase").value;
+    const valor = k => {
+      if(ipc.map.has(k)) return ipc.map.get(k);
+      if(!proy || k < ipc.last) return null;
+      return ipc.map.get(ipc.last) * Math.pow(1+proy.r, mesesEntre(ipc.last, k));
+    };
     for(const p of periods){
       const U=monthKey(p.fecha); const E=monthShift(U,-1-d); const B=monthShift(E,-N);
-      const vb=ipc.map.get(B), ve=ipc.map.get(E);
       const first=monthShift(B,1);
       p.detalle = N===1 ? `IPC ${monthName(E)}` : `IPC ${monthShort(first)} a ${monthShort(E)}`;
-      if(vb==null){ p.err=`Falta el IPC de ${monthName(B)}.`; continue; }
-      if(ve==null){ p.pend=`Esperando el IPC de ${monthName(E)}`;
-        // acumulado parcial con lo publicado
-        if(ipc.last>B){ p.factor=ipc.map.get(ipc.last)/vb; p.parcial=`parcial hasta ${monthShort(ipc.last)}`; }
-        continue; }
+      const vb=valor(B), ve=valor(E);
+      if(vb==null && B < ipc.last){ p.err=`Falta el IPC de ${monthName(B)}.`; continue; }
+      if(ve==null || vb==null){
+        p.pend=`Esperando el IPC de ${monthName(E)}`;
+        if(vb!=null && ipc.last>B){ p.factor=ipc.map.get(ipc.last)/vb; p.parcial=`parcial hasta ${monthShort(ipc.last)}`; }
+        continue;
+      }
       p.factor=ve/vb;
+      if(E > ipc.last){
+        const n = Math.min(N, mesesEntre(ipc.last, E));
+        p.proyectado = true;
+        p.notaProy = `${n} ${n===1 ? "mes estimado" : "meses estimados"}`;
+      }
     }
   }
 
   // ---------- render ----------
-  function render(periods, statusChips){
-    const base=+$("monto").value||0; let monto=base; let vigente=base, vigenteDesde=$("inicio").value, ultimoFactor=null, proximo=null;
+  function render(periods, statusChips, proy){
+    const base=+$("monto").value||0; let monto=base; let vigente=base, vigenteDesde=$("inicio").value, ultimoFactor=null, proximo=null, ultimoProy=null;
     const rows=[`<tr><td>Inicio<span class="sub">${fmtDate($("inicio").value)}</span></td><td>—</td><td class="num">—</td><td class="num">${ars.format(base)}</td></tr>`];
-    for(const p of periods){
+    let idxVigente = 0;
+    periods.forEach((p,i) => {
       let varTxt="—", montoTxt="—", cls="", tag="";
       if(p.err){ tag=`<span class="tag">${p.err}</span>`; cls="pend"; }
       else if(p.pend){
@@ -328,25 +418,40 @@ footer a{color:var(--accent)}
       } else {
         const nuevo = monto*p.factor;
         varTxt=pct(p.factor-1); montoTxt=ars.format(nuevo);
-        if(p.estimado){ cls="pend"; tag=`<span class="tag">${p.futuro?"Estimado con datos al "+fmtDate(p.b.fecha):"Valor del "+fmtDate(p.b.fecha)}</span>`; if(p.futuro && !proximo) proximo={...p,nuevo}; }
-        if(!p.futuro){ monto=nuevo; vigente=nuevo; vigenteDesde=p.fecha; ultimoFactor=p.factor; }
+        if(p.proyectado){
+          cls="proy"; tag=`<span class="tag proy">Proyectado · ${p.notaProy}</span>`;
+          if(!proximo && p.futuro) proximo={...p,nuevo};
+          if(!p.futuro && !proximo) proximo={...p,nuevo,vencido:true};
+          ultimoProy={...p,nuevo};
+          monto=nuevo;
+        } else {
+          if(p.estimado){ cls="pend"; tag=`<span class="tag">${p.futuro?"Estimado con datos al "+fmtDate(p.b.fecha):"Valor del "+fmtDate(p.b.fecha)}</span>`; if(p.futuro && !proximo) proximo={...p,nuevo}; }
+          if(!p.futuro){ monto=nuevo; vigente=nuevo; vigenteDesde=p.fecha; ultimoFactor=p.factor; idxVigente=i+1; }
+          else monto=nuevo;
+        }
       }
       rows.push(`<tr class="${cls}"><td>${p.k}º ajuste<span class="sub">${fmtDate(p.fecha)}</span></td><td>${p.detalle||""} ${tag}</td><td class="num">${varTxt}</td><td class="num">${montoTxt}</td></tr>`);
-    }
+    });
     $("tbody").innerHTML=rows.join("");
-    // marcar fila vigente
     const trs=[...$("tbody").querySelectorAll("tr")];
-    const idx = periods.filter(p=>!p.futuro && !p.pend && !p.err).length;
-    if(trs[idx]) trs[idx].classList.add("cur");
+    if(trs[idxVigente]) trs[idxVigente].classList.add("cur");
 
     $("res-monto").textContent=ars.format(vigente);
     $("res-label").textContent = `Alquiler vigente desde el ${fmtDate(vigenteDesde)}`;
     let delta = ultimoFactor ? `Último ajuste: <b>${pct(ultimoFactor-1)}</b>` : "Todavía no hubo ajustes.";
     if(proximo){
-      const est = proximo.nuevo ? `${ars.format(proximo.nuevo)} (estimado)` : (proximo.pend||"");
-      delta += ` · Próximo ${fmtDate(proximo.fecha)}: ${est}`;
+      const etiqueta = proximo.proyectado ? "proyectado" : "estimado";
+      const est = proximo.nuevo ? `${ars.format(proximo.nuevo)} (${pct(proximo.factor-1)}, ${etiqueta})` : (proximo.pend||"");
+      delta += ` · ${proximo.vencido ? "Ajuste" : "Próximo"} ${fmtDate(proximo.fecha)}: ${est}`;
     }
     $("res-delta").innerHTML=delta;
+
+    const linea = $("res-proy");
+    if(proy && ultimoProy && ultimoProy.k !== (proximo && proximo.k)){
+      const total = ultimoProy.nuevo / vigente - 1;
+      linea.innerHTML = `Último ajuste del contrato, ${fmtDate(ultimoProy.fecha)}: <b>${ars.format(ultimoProy.nuevo)}</b> (${pct(total)} sobre el alquiler actual, proyectado)`;
+      linea.hidden = false;
+    } else linea.hidden = true;
     $("status").innerHTML=statusChips.join("");
   }
 
@@ -355,20 +460,22 @@ footer a{color:var(--accent)}
     const id=++runId; $("err").hidden=true; $("res").classList.add("loading");
     try{
       const inicio=$("inicio").value; if(!inicio) return;
-      const periods=buildPeriods(); const chips=[];
+      const chips=[]; let serie;
       if(tipo==="ICL"){
-        const icl=await loadICL(addDays(inicio,-10)); if(id!==runId) return;
-        computeICL(icl,periods);
-        chips.push(`<span class="chip"><span class="dot"></span>ICL ${fmtDate(icl.last)}: ${fmtIdx(icl.map.get(icl.last))}</span>`);
-        chips.push(chipFuente(icl));
+        serie = await loadICL(addDays(inicio,-10)); serie.tipo = "ICL";
+        chips.push(`<span class="chip"><span class="dot"></span>ICL ${fmtDate(serie.last)}: ${fmtIdx(serie.map.get(serie.last))}</span>`);
       }else{
-        const ipc=await loadIPC(); if(id!==runId) return;
-        computeIPC(ipc,periods);
-        chips.push(`<span class="chip"><span class="dot"></span>Último IPC: ${monthName(ipc.last)}${ipc.lastVar!=null?" · "+pct(ipc.lastVar):""}</span>`);
-        chips.push(chipFuente(ipc));
+        serie = await loadIPC(); serie.tipo = "IPC";
+        chips.push(`<span class="chip"><span class="dot"></span>Último IPC: ${monthName(serie.last)}${serie.lastVar!=null?" · "+pct(serie.lastVar):""}</span>`);
       }
+      chips.push(chipFuente(serie));
+      const proy = await tasaProyeccion(serie);
+      if(id!==runId) return;
+      const periods = buildPeriods(!!proy);
+      if(tipo==="ICL") computeICL(serie, periods, proy); else computeIPC(serie, periods, proy);
+      if(proy) chips.push(`<span class="chip">${proy.texto}</span>`);
       chips.push(`<span class="chip">Consultado ${new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>`);
-      render(periods,chips);
+      render(periods, chips, proy);
     }catch(e){
       if(id!==runId) return;
       $("err").hidden=false;
@@ -376,9 +483,24 @@ footer a{color:var(--accent)}
         ? `No respondió ninguna fuente (${e.fallas.join("; ")}). Probá de nuevo en unos minutos con "Actualizar datos".`
         : `No se pudieron procesar los datos: ${e.message}.`;
       $("res-delta").textContent="Sin datos de índices.";
+      $("res-proy").hidden=true;
       $("status").innerHTML=`<span class="chip err"><span class="dot"></span>Fuente no disponible</span>`;
     }finally{ if(id===runId) $("res").classList.remove("loading"); }
   }
+
+  const TEXTO_PROY = {
+    rem: "Los ajustes futuros se estiman con la mediana de inflación esperada para los próximos 12 meses que releva el BCRA entre analistas (REM).",
+    tendencia: "Los ajustes futuros repiten el ritmo promedio del índice en los últimos 3 meses.",
+    propia: "Los ajustes futuros se estiman con la tasa mensual que cargues.",
+    no: "Solo se muestran ajustes con datos publicados.",
+  };
+  function setProy(){
+    $("lbl-tasa").hidden = $("proy").value !== "propia";
+    $("hint-proy").textContent = TEXTO_PROY[$("proy").value] + ($("proy").value !== "no" ? " Es una estimación, no un valor garantizado." : "");
+  }
+  $("proy").addEventListener("change", () => { setProy(); run(); });
+  $("tasa").addEventListener("input", () => { clearTimeout(window.__tt); window.__tt = setTimeout(run, 300); });
+  setProy();
 
   function setTipo(t){
     tipo=t;
@@ -394,7 +516,7 @@ footer a{color:var(--accent)}
   $("b-ipc").onclick=()=>setTipo("IPC");
   ["monto","inicio","frec","dur","desfase"].forEach(id=>$(id).addEventListener("change",run));
   $("monto").addEventListener("input",()=>{ clearTimeout(window.__t); window.__t=setTimeout(run,300); });
-  $("refresh").onclick=()=>{ cache.icl=null; cache.ipc=null; run(); };
+  $("refresh").onclick=()=>{ cache.icl=null; cache.ipc=null; cache.rem=null; run(); };
   run();
 })();
 </script>
