@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ajuste de Alquiler ICL·IPC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: una columna de formulario tipo "ficha de contrato" + resultado destacado + tabla de períodos */
+:root{
+  --bg:#f3f5f7; --surface:#ffffff; --ink:#18232e; --muted:#5b6b7a; --line:#d6dee6;
+  --accent:#1d5d8f; --accent-soft:#e3eef7; --ok:#1f7a4d; --warn:#9a6200; --warn-soft:#fbf1dd; --err:#b3261e;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"Public Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f151b; --surface:#17202a; --ink:#e4ebf1; --muted:#93a4b4; --line:#2a3744;
+  --accent:#6fb0e3; --accent-soft:#1b3346; --ok:#5cc792; --warn:#e3ad4f; --warn-soft:#33281a; --err:#ff8a80; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f151b; --surface:#17202a; --ink:#e4ebf1; --muted:#93a4b4; --line:#2a3744;
+  --accent:#6fb0e3; --accent-soft:#1b3346; --ok:#5cc792; --warn:#e3ad4f; --warn-soft:#33281a; --err:#ff8a80; color-scheme:dark}
+*{box-sizing:border-box}
+html{color-scheme:light}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;padding:24px 16px 48px}
+.wrap{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(1.6rem,5vw,2.2rem);line-height:1.1;margin:0;text-wrap:balance;letter-spacing:-.01em}
+.lede{color:var(--muted);margin:6px 0 0;max-width:60ch}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+label,.lbl{display:flex;flex-direction:column;gap:6px;font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+input,select{font:inherit;font-size:1rem;text-transform:none;letter-spacing:0;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:10px 12px;width:100%}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{font:inherit;font-weight:600;border:0;background:var(--bg);color:var(--muted);padding:10px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--surface)}
+.seg button small{display:block;font-weight:400;font-size:.72rem;opacity:.85}
+.hint{font-size:.82rem;color:var(--muted);margin:10px 0 0}
+.result{display:flex;flex-direction:column;gap:6px;border-left:4px solid var(--accent)}
+.eyebrow{font-size:.74rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.big{font-family:var(--display);font-weight:700;font-size:clamp(2rem,8vw,2.8rem);line-height:1;font-variant-numeric:tabular-nums}
+.delta{font-family:var(--mono);font-size:.95rem}
+.delta b{color:var(--accent)}
+.status{display:flex;flex-wrap:wrap;gap:8px;font-size:.8rem}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;background:var(--accent-soft);color:var(--ink);font-family:var(--mono);font-size:.76rem}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.err{background:var(--warn-soft);color:var(--err)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.chip.warn .dot,.chip.err .dot{background:currentColor}
+.tablewrap{overflow-x:auto;min-width:0}
+table{width:100%;border-collapse:collapse;font-size:.88rem;min-width:520px}
+th{text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;vertical-align:top}
+td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+th.num{text-align:right}
+tr.pend td{color:var(--muted)}
+tr.cur td{background:var(--accent-soft)}
+.tag{font-size:.7rem;font-weight:600;padding:2px 7px;border-radius:5px;background:var(--warn-soft);color:var(--warn);white-space:nowrap}
+.tag.ok{background:var(--accent-soft);color:var(--accent)}
+.sub{display:block;font-size:.75rem;color:var(--muted);font-family:var(--mono)}
+h2{font-family:var(--display);font-weight:500;font-size:1.15rem;margin:0 0 12px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.btn{font:inherit;font-weight:600;font-size:.85rem;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:7px;padding:7px 12px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+footer{font-size:.8rem;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+footer a{color:var(--accent)}
+.err-box{color:var(--err);font-size:.88rem}
+@media (prefers-reduced-motion:no-preference){.big{transition:opacity .2s}}
+.loading .big{opacity:.4}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Ajuste de alquiler por ICL o IPC</h1>
+    <p class="lede">Cargá el alquiler inicial y la fecha de inicio del contrato. Los índices se consultan en vivo al BCRA (ICL) y al INDEC vía datos.gob.ar (IPC).</p>
+  </header>
+
+  <section class="panel" aria-label="Datos del contrato">
+    <div class="grid">
+      <div class="lbl">Índice de actualización
+        <div class="seg" role="group" aria-label="Índice de actualización">
+          <button type="button" id="b-icl" aria-pressed="true">ICL <small>BCRA · diario</small></button>
+          <button type="button" id="b-ipc" aria-pressed="false">IPC <small>INDEC · mensual</small></button>
+        </div>
+      </div>
+      <label for="monto">Alquiler inicial ($)
+        <input id="monto" type="number" inputmode="decimal" min="0" step="0.01" value="450000">
+      </label>
+      <label for="inicio">Inicio del contrato
+        <input id="inicio" type="date" value="2025-10-01">
+      </label>
+      <label for="frec">Actualiza cada
+        <select id="frec">
+          <option value="1">1 mes</option><option value="2">2 meses</option>
+          <option value="3">3 meses</option><option value="4">4 meses</option>
+          <option value="6">6 meses</option><option value="12" selected>12 meses</option>
+        </select>
+      </label>
+      <label for="dur">Duración del contrato
+        <select id="dur">
+          <option value="12">12 meses</option><option value="24">24 meses</option>
+          <option value="36" selected>36 meses</option><option value="48">48 meses</option>
+        </select>
+      </label>
+      <label for="desfase" id="lbl-desfase" hidden>Meses de IPC usados
+        <select id="desfase">
+          <option value="0">Los del período (hasta el mes previo al ajuste)</option>
+          <option value="1">Desfasados 1 mes (último publicado al ajustar)</option>
+          <option value="2">Desfasados 2 meses</option>
+        </select>
+      </label>
+    </div>
+    <p class="hint" id="hint">Ejemplo precargado. ICL: se divide el valor del índice el día del ajuste por el del día de inicio del período.</p>
+  </section>
+
+  <section class="panel result" id="res" aria-live="polite">
+    <span class="eyebrow" id="res-label">Alquiler vigente</span>
+    <span class="big" id="res-monto">—</span>
+    <span class="delta" id="res-delta">Consultando índices…</span>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section class="panel">
+    <div class="row"><h2>Períodos del contrato</h2><button class="btn" id="refresh" type="button">Actualizar datos</button></div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Ajuste</th><th>Índices usados</th><th class="num">Variación</th><th class="num">Nuevo alquiler</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table></div>
+    <p class="err-box" id="err" hidden></p>
+  </section>
+
+  <footer>
+    <span>Fuentes: <a href="https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables.asp" target="_blank" rel="noopener">BCRA · Índice para Contratos de Locación (variable 40)</a> · <a href="https://datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26" target="_blank" rel="noopener">INDEC · IPC Nivel General Nacional (datos.gob.ar)</a>. Si datos.gob.ar no responde, el IPC se toma de la serie "Inflación mensual" del BCRA (variable 27).</span>
+    <span>El INDEC publica el IPC de cada mes a mediados del mes siguiente; hasta entonces el ajuste que lo necesita figura como pendiente. El cálculo es orientativo: lo que vale es lo pactado en el contrato.</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const BCRA = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/";
+  const DATOS = "https://apis.datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26&format=json&limit=1000";
+  const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const ars = new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",minimumFractionDigits:2,maximumFractionDigits:2});
+  const pct = v => (v>=0?"+":"") + (v*100).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}) + "%";
+  const fmtIdx = v => v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:4});
+
+  let tipo = "ICL";
+  const cache = { icl:null, iclFrom:null, ipc:null, ipcSrc:null };
+
+  // ---------- fechas (todas en UTC, formato YYYY-MM-DD) ----------
+  const toD = s => { const [y,m,d] = s.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)); };
+  const toS = d => d.toISOString().slice(0,10);
+  const addMonths = (s,n) => { const d=toD(s); const day=d.getUTCDate();
+    const r=new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()+n, 1));
+    const last=new Date(Date.UTC(r.getUTCFullYear(), r.getUTCMonth()+1, 0)).getUTCDate();
+    r.setUTCDate(Math.min(day,last)); return toS(r); };
+  const addDays = (s,n) => { const d=toD(s); d.setUTCDate(d.getUTCDate()+n); return toS(d); };
+  const monthKey = s => s.slice(0,7);
+  const monthShift = (key,n) => addMonths(key+"-01", n).slice(0,7);
+  const monthName = key => { const [y,m]=key.split("-").map(Number); return MESES[m-1]+" "+y; };
+  const monthShort = key => { const [y,m]=key.split("-").map(Number); return MESES[m-1].slice(0,3)+" "+String(y).slice(2); };
+  const fmtDate = s => { const [y,m,d]=s.split("-"); return `${d}/${m}/${y}`; };
+  const today = () => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; };
+
+  // ---------- datos ----------
+  async function getJSON(url){
+    const r = await fetch(url, {cache:"no-store"});
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }
+
+  async function loadICL(desde){
+    if(cache.icl && cache.iclFrom <= desde) return cache.icl;
+    const hasta = today(); const map = new Map(); let offset = 0;
+    for(let i=0;i<10;i++){
+      const j = await getJSON(`${BCRA}40?desde=${desde}&hasta=${hasta}&limit=1000&offset=${offset}`);
+      const det = (j.results && j.results[0] && j.results[0].detalle) || [];
+      det.forEach(x => map.set(x.fecha.slice(0,10), Number(x.valor)));
+      const count = j.metadata && j.metadata.resultset ? j.metadata.resultset.count : det.length;
+      offset += det.length;
+      if(!det.length || offset >= count) break;
+    }
+    const dates = [...map.keys()].sort();
+    if(!dates.length) throw new Error("El BCRA no devolvió valores de ICL para esas fechas.");
+    cache.icl = { map, dates, last: dates[dates.length-1] };
+    cache.iclFrom = desde;
+    return cache.icl;
+  }
+  function iclAt(icl, fecha){
+    // valor del día; si falta, el último disponible anterior
+    if(icl.map.has(fecha)) return {fecha, v:icl.map.get(fecha), exact:true};
+    let best=null; for(const d of icl.dates){ if(d<=fecha) best=d; else break; }
+    return best ? {fecha:best, v:icl.map.get(best), exact:false} : null;
+  }
+
+  async function loadIPC(){
+    if(cache.ipc) return cache.ipc;
+    try{
+      const j = await getJSON(`${DATOS}&start_date=2017-01-01`);
+      const map = new Map(); (j.data||[]).forEach(([f,v]) => { if(v!=null) map.set(monthKey(f), Number(v)); });
+      if(!map.size) throw new Error("vacío");
+      cache.ipcSrc = "INDEC (datos.gob.ar)";
+      cache.ipc = finishIPC(map);
+    }catch(e){
+      // respaldo: inflación mensual (%) publicada por el BCRA, compuesta en un índice
+      const j = await getJSON(`${BCRA}27?desde=2017-01-01&limit=1000`);
+      const det = ((j.results&&j.results[0]&&j.results[0].detalle)||[]).map(x=>({k:monthKey(x.fecha), p:Number(x.valor)})).sort((a,b)=>a.k<b.k?-1:1);
+      if(!det.length) throw new Error("No se pudo obtener el IPC de ninguna fuente oficial.");
+      const map = new Map(); let idx = 100; map.set(monthShift(det[0].k,-1), idx);
+      det.forEach(x => { idx = idx*(1+x.p/100); map.set(x.k, idx); });
+      cache.ipcSrc = "BCRA (inflación mensual, respaldo)";
+      cache.ipc = finishIPC(map);
+    }
+    return cache.ipc;
+  }
+  function finishIPC(map){
+    const keys=[...map.keys()].sort(); const last=keys[keys.length-1];
+    const prev=map.get(monthShift(last,-1));
+    return { map, last, lastVar: prev ? map.get(last)/prev-1 : null };
+  }
+
+  // ---------- cálculo ----------
+  function buildPeriods(){
+    const inicio=$("inicio").value, N=+$("frec").value, dur=+$("dur").value;
+    const out=[]; const hoy=today();
+    for(let k=1; k*N < dur; k++){
+      const fecha = addMonths(inicio, k*N);
+      out.push({k, fecha, desde:addMonths(inicio,(k-1)*N), futuro: fecha>hoy});
+      if(fecha>hoy) break;
+    }
+    return out;
+  }
+
+  function computeICL(icl, periods){
+    for(const p of periods){
+      const a=iclAt(icl,p.desde); const b=iclAt(icl,p.fecha);
+      if(!a){ p.err="Sin ICL para la fecha de inicio (la serie empieza el 01/07/2020)."; continue; }
+      p.a=a; p.b=b; p.factor=b.v/a.v;
+      p.estimado = p.futuro || !b.exact;
+      p.detalle = `ICL ${fmtDate(a.fecha)}: ${fmtIdx(a.v)} → ${fmtDate(b.fecha)}: ${fmtIdx(b.v)}`;
+    }
+  }
+  function computeIPC(ipc, periods){
+    const N=+$("frec").value, d=+$("desfase").value;
+    for(const p of periods){
+      const U=monthKey(p.fecha); const E=monthShift(U,-1-d); const B=monthShift(E,-N);
+      const vb=ipc.map.get(B), ve=ipc.map.get(E);
+      const first=monthShift(B,1);
+      p.detalle = N===1 ? `IPC ${monthName(E)}` : `IPC ${monthShort(first)} a ${monthShort(E)}`;
+      if(vb==null){ p.err=`Falta el IPC de ${monthName(B)}.`; continue; }
+      if(ve==null){ p.pend=`Esperando el IPC de ${monthName(E)}`;
+        // acumulado parcial con lo publicado
+        if(ipc.last>B){ p.factor=ipc.map.get(ipc.last)/vb; p.parcial=`parcial hasta ${monthShort(ipc.last)}`; }
+        continue; }
+      p.factor=ve/vb;
+    }
+  }
+
+  // ---------- render ----------
+  function render(periods, statusChips){
+    const base=+$("monto").value||0; let monto=base; let vigente=base, vigenteDesde=$("inicio").value, ultimoFactor=null, proximo=null;
+    const rows=[`<tr><td>Inicio<span class="sub">${fmtDate($("inicio").value)}</span></td><td>—</td><td class="num">—</td><td class="num">${ars.format(base)}</td></tr>`];
+    for(const p of periods){
+      let varTxt="—", montoTxt="—", cls="", tag="";
+      if(p.err){ tag=`<span class="tag">${p.err}</span>`; cls="pend"; }
+      else if(p.pend){
+        cls="pend"; tag=`<span class="tag">${p.pend}</span>`;
+        if(p.factor){ varTxt=pct(p.factor-1)+`<span class="sub">${p.parcial}</span>`; }
+        if(!proximo) proximo=p;
+      } else {
+        const nuevo = monto*p.factor;
+        varTxt=pct(p.factor-1); montoTxt=ars.format(nuevo);
+        if(p.estimado){ cls="pend"; tag=`<span class="tag">${p.futuro?"Estimado con datos al "+fmtDate(p.b.fecha):"Valor del "+fmtDate(p.b.fecha)}</span>`; if(p.futuro && !proximo) proximo={...p,nuevo}; }
+        if(!p.futuro){ monto=nuevo; vigente=nuevo; vigenteDesde=p.fecha; ultimoFactor=p.factor; }
+      }
+      rows.push(`<tr class="${cls}"><td>${p.k}º ajuste<span class="sub">${fmtDate(p.fecha)}</span></td><td>${p.detalle||""} ${tag}</td><td class="num">${varTxt}</td><td class="num">${montoTxt}</td></tr>`);
+    }
+    $("tbody").innerHTML=rows.join("");
+    // marcar fila vigente
+    const trs=[...$("tbody").querySelectorAll("tr")];
+    const idx = periods.filter(p=>!p.futuro && !p.pend && !p.err).length;
+    if(trs[idx]) trs[idx].classList.add("cur");
+
+    $("res-monto").textContent=ars.format(vigente);
+    $("res-label").textContent = `Alquiler vigente desde el ${fmtDate(vigenteDesde)}`;
+    let delta = ultimoFactor ? `Último ajuste: <b>${pct(ultimoFactor-1)}</b>` : "Todavía no hubo ajustes.";
+    if(proximo){
+      const est = proximo.nuevo ? `${ars.format(proximo.nuevo)} (estimado)` : (proximo.pend||"");
+      delta += ` · Próximo ${fmtDate(proximo.fecha)}: ${est}`;
+    }
+    $("res-delta").innerHTML=delta;
+    $("status").innerHTML=statusChips.join("");
+  }
+
+  let runId=0;
+  async function run(){
+    const id=++runId; $("err").hidden=true; $("res").classList.add("loading");
+    try{
+      const inicio=$("inicio").value; if(!inicio) return;
+      const periods=buildPeriods(); const chips=[];
+      if(tipo==="ICL"){
+        const icl=await loadICL(addDays(inicio,-10)); if(id!==runId) return;
+        computeICL(icl,periods);
+        chips.push(`<span class="chip"><span class="dot"></span>ICL ${fmtDate(icl.last)}: ${fmtIdx(icl.map.get(icl.last))}</span>`);
+      }else{
+        const ipc=await loadIPC(); if(id!==runId) return;
+        computeIPC(ipc,periods);
+        chips.push(`<span class="chip"><span class="dot"></span>Último IPC: ${monthName(ipc.last)}${ipc.lastVar!=null?" · "+pct(ipc.lastVar):""}</span>`);
+        chips.push(`<span class="chip ${cache.ipcSrc.includes("respaldo")?"warn":""}">${cache.ipcSrc}</span>`);
+      }
+      chips.push(`<span class="chip">Consultado ${new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>`);
+      render(periods,chips);
+    }catch(e){
+      if(id!==runId) return;
+      $("err").hidden=false;
+      $("err").textContent=`No se pudieron obtener los datos (${e.message}). Revisá la conexión y tocá "Actualizar datos".`;
+      $("res-delta").textContent="Sin datos de índices.";
+      $("status").innerHTML=`<span class="chip err"><span class="dot"></span>Fuente no disponible</span>`;
+    }finally{ if(id===runId) $("res").classList.remove("loading"); }
+  }
+
+  function setTipo(t){
+    tipo=t;
+    $("b-icl").setAttribute("aria-pressed", t==="ICL"); $("b-ipc").setAttribute("aria-pressed", t==="IPC");
+    $("lbl-desfase").hidden = t!=="IPC";
+    $("hint").textContent = t==="ICL"
+      ? "ICL: se divide el valor del índice el día del ajuste por el del día de inicio del período."
+      : "IPC: se acumula la inflación mensual de los meses del período (índice del último mes ÷ índice del mes anterior al primero).";
+    if(t==="IPC" && $("frec").value==="12") $("frec").value="3";
+    run();
+  }
+  $("b-icl").onclick=()=>setTipo("ICL");
+  $("b-ipc").onclick=()=>setTipo("IPC");
+  ["monto","inicio","frec","dur","desfase"].forEach(id=>$(id).addEventListener("change",run));
+  $("monto").addEventListener("input",()=>{ clearTimeout(window.__t); window.__t=setTimeout(run,300); });
+  $("refresh").onclick=()=>{ cache.icl=null; cache.ipc=null; run(); };
+  run();
+})();
+</script>
+</body>
+</html>
