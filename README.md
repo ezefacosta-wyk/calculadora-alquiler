@@ -28,6 +28,13 @@ Para los ajustes que todavía no tienen datos publicados, la página puede estim
 
 Las filas proyectadas aparecen en cursiva con la etiqueta *Proyectado* y la cantidad de meses estimados.
 
+## Exportar
+
+- **Excel (.xlsx):** una hoja con los parámetros del contrato, la tabla de ajustes y un gráfico de columnas nativo de Excel (las columnas claras son ajustes proyectados). Cada alquiler es una fórmula (`alquiler anterior × (1 + variación)`) que parte de la celda del alquiler inicial: si la cambiás, se recalcula toda la tabla y el gráfico. Se imprime en una página apaisada.
+- **CSV:** los mismos datos de la tabla, separados por `;` y con coma decimal, para que Excel en español los abra directamente en columnas.
+
+El archivo se arma en el navegador, sin librerías externas.
+
 ## Uso
 
 1. Elegí el índice (ICL o IPC).

@@ -67,7 +67,9 @@ tr.proy td.num{color:var(--muted)}
 h2{font-family:var(--display);font-weight:500;font-size:1.15rem;margin:0 0 12px}
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .btn{font:inherit;font-weight:600;font-size:.85rem;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:7px;padding:7px 12px;cursor:pointer}
-.btn:hover{border-color:var(--accent)}
+.btn:hover:not(:disabled){border-color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.acciones{display:flex;flex-wrap:wrap;gap:8px}
 footer{font-size:.8rem;color:var(--muted);display:flex;flex-direction:column;gap:6px}
 footer a{color:var(--accent)}
 .err-box{color:var(--err);font-size:.88rem}
@@ -142,7 +144,14 @@ footer a{color:var(--accent)}
   </section>
 
   <section class="panel">
-    <div class="row"><h2>Períodos del contrato</h2><button class="btn" id="refresh" type="button">Actualizar datos</button></div>
+    <div class="row"><h2>Períodos del contrato</h2>
+      <div class="acciones">
+        <button class="btn" id="exp-xlsx" type="button" disabled>Exportar Excel</button>
+        <button class="btn" id="exp-csv" type="button" disabled>Exportar CSV</button>
+        <button class="btn" id="refresh" type="button">Actualizar datos</button>
+      </div>
+    </div>
+    <p class="hint" id="exp-msg" aria-live="polite" hidden></p>
     <div class="tablewrap"><table>
       <thead><tr><th>Ajuste</th><th>Índices usados</th><th class="num">Variación</th><th class="num">Nuevo alquiler</th></tr></thead>
       <tbody id="tbody"></tbody>
@@ -168,6 +177,7 @@ footer a{color:var(--accent)}
 
   let tipo = "ICL";
   const cache = { icl:null, iclFrom:null, ipc:null, rem:null };
+  let ultimoCalculo = null, ctxExport = null;
 
   // ---------- fechas (todas en UTC, formato YYYY-MM-DD) ----------
   const toD = s => { const [y,m,d] = s.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)); };
@@ -408,6 +418,7 @@ footer a{color:var(--accent)}
     const base=+$("monto").value||0; let monto=base; let vigente=base, vigenteDesde=$("inicio").value, ultimoFactor=null, proximo=null, ultimoProy=null;
     const rows=[`<tr><td>Inicio<span class="sub">${fmtDate($("inicio").value)}</span></td><td>—</td><td class="num">—</td><td class="num">${ars.format(base)}</td></tr>`];
     let idxVigente = 0;
+    const filas = [{ etiqueta:"Inicio", fecha:$("inicio").value, estado:"Contrato", indices:"", variacion:null, alquiler:base }];
     periods.forEach((p,i) => {
       let varTxt="—", montoTxt="—", cls="", tag="";
       if(p.err){ tag=`<span class="tag">${p.err}</span>`; cls="pend"; }
@@ -430,9 +441,18 @@ footer a{color:var(--accent)}
           else monto=nuevo;
         }
       }
+      filas.push({
+        etiqueta:`${p.k}º ajuste`, fecha:p.fecha, indices:p.detalle||"",
+        estado: p.err ? "Sin datos" : p.pend ? p.pend : p.proyectado ? `Proyectado (${p.notaProy})` : p.estimado ? "Estimado" : (p.futuro ? "Estimado" : "Real"),
+        proyectado: !!p.proyectado,
+        variacion: (!p.err && !p.pend) ? p.factor-1 : null,
+        alquiler: (!p.err && !p.pend) ? monto : null,
+      });
       rows.push(`<tr class="${cls}"><td>${p.k}º ajuste<span class="sub">${fmtDate(p.fecha)}</span></td><td>${p.detalle||""} ${tag}</td><td class="num">${varTxt}</td><td class="num">${montoTxt}</td></tr>`);
     });
     $("tbody").innerHTML=rows.join("");
+    ultimoCalculo = { filas, idxVigente, vigente, vigenteDesde, base, ctx: ctxExport, proy };
+    $("exp-xlsx").disabled = $("exp-csv").disabled = false;
     const trs=[...$("tbody").querySelectorAll("tr")];
     if(trs[idxVigente]) trs[idxVigente].classList.add("cur");
 
@@ -470,6 +490,11 @@ footer a{color:var(--accent)}
       }
       chips.push(chipFuente(serie));
       const proy = await tasaProyeccion(serie);
+      ctxExport = {
+        indice: tipo,
+        fuente: serie.copia ? `${serie.fuente} del ${fmtDate(serie.copia)}` : serie.fuente,
+        ultimoDato: tipo==="ICL" ? `${fmtDate(serie.last)}: ${fmtIdx(serie.map.get(serie.last))}` : monthName(serie.last),
+      };
       if(id!==runId) return;
       const periods = buildPeriods(!!proy);
       if(tipo==="ICL") computeICL(serie, periods, proy); else computeIPC(serie, periods, proy);
@@ -484,6 +509,7 @@ footer a{color:var(--accent)}
         : `No se pudieron procesar los datos: ${e.message}.`;
       $("res-delta").textContent="Sin datos de índices.";
       $("res-proy").hidden=true;
+      ultimoCalculo = null; $("exp-xlsx").disabled = $("exp-csv").disabled = true;
       $("status").innerHTML=`<span class="chip err"><span class="dot"></span>Fuente no disponible</span>`;
     }finally{ if(id===runId) $("res").classList.remove("loading"); }
   }
@@ -516,6 +542,224 @@ footer a{color:var(--accent)}
   $("b-ipc").onclick=()=>setTipo("IPC");
   ["monto","inicio","frec","dur","desfase"].forEach(id=>$(id).addEventListener("change",run));
   $("monto").addEventListener("input",()=>{ clearTimeout(window.__t); window.__t=setTimeout(run,300); });
+
+  // ---------- exportación ----------
+  const DESFASES = ["Los del período", "Desfasados 1 mes", "Desfasados 2 meses"];
+  const xmlEsc = t => String(t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const serial = s => (toD(s) - Date.UTC(1899,11,30)) / 864e5;   // fecha → número de serie de Excel
+  const meses = n => `${n} ${+n===1 ? "mes" : "meses"}`;
+  const nombreArchivo = ext => `alquiler-${ultimoCalculo.ctx.indice}-${$("inicio").value}.${ext}`;
+
+  function parametros(c){
+    const out = [
+      ["Índice", c.ctx.indice === "ICL" ? "ICL (BCRA)" : "IPC (INDEC)", "txt"],
+      ["Alquiler inicial", c.base, "money"],
+      ["Inicio del contrato", $("inicio").value, "date"],
+      ["Actualiza cada", meses($("frec").value), "txt"],
+      ["Duración", meses($("dur").value), "txt"],
+    ];
+    if(c.ctx.indice === "IPC") out.push(["Meses de IPC usados", DESFASES[+$("desfase").value], "txt"]);
+    out.push(["Proyección", c.proy ? c.proy.texto : "Sin proyección", "txt"]);
+    out.push(["Fuente de datos", `${c.ctx.fuente} · último dato ${c.ctx.ultimoDato}`, "txt"]);
+    out.push(["Alquiler vigente", null, "vigente"]);
+    return out;
+  }
+
+  // CSV con separador ";" y coma decimal, como lo abre Excel en Argentina
+  function construirCSV(c){
+    const num = (v, dec) => v == null ? "" : v.toFixed(dec).replace(".", ",");
+    const campo = t => /[;"\n]/.test(t) ? `"${t.replace(/"/g,'""')}"` : t;
+    const lineas = [["Ajuste","Fecha","Estado","Variación (%)","Alquiler ($)","Índices usados"].join(";")];
+    c.filas.forEach(f => lineas.push([f.etiqueta, fmtDate(f.fecha), f.estado, num(f.variacion==null?null:f.variacion*100, 2), num(f.alquiler, 2), f.indices].map(x => campo(String(x))).join(";")));
+    return "﻿" + lineas.join("\r\n") + "\r\n";
+  }
+
+  // ---- ZIP sin compresión (suficiente para un .xlsx) ----
+  const CRC_T = (() => { const t = new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
+  const crc32 = b => { let c = 0xFFFFFFFF; for(let i=0;i<b.length;i++) c = CRC_T[(c^b[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; };
+  function zip(archivos){
+    const enc = new TextEncoder(), partes = [], central = []; let offset = 0;
+    for(const [nombre, texto] of archivos){
+      const n = enc.encode(nombre), d = enc.encode(texto), crc = crc32(d);
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true); lh.setUint16(12,0x21,true);
+      lh.setUint32(14,crc,true); lh.setUint32(18,d.length,true); lh.setUint32(22,d.length,true); lh.setUint16(26,n.length,true);
+      partes.push(new Uint8Array(lh.buffer), n, d);
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true); ch.setUint16(14,0x21,true);
+      ch.setUint32(16,crc,true); ch.setUint32(20,d.length,true); ch.setUint32(24,d.length,true); ch.setUint16(28,n.length,true); ch.setUint32(42,offset,true);
+      central.push(new Uint8Array(ch.buffer), n);
+      offset += 30 + n.length + d.length;
+    }
+    const tam = central.reduce((s,a) => s + a.length, 0);
+    const fin = new DataView(new ArrayBuffer(22));
+    fin.setUint32(0,0x06054b50,true); fin.setUint16(8,archivos.length,true); fin.setUint16(10,archivos.length,true); fin.setUint32(12,tam,true); fin.setUint32(16,offset,true);
+    return new Blob([...partes, ...central, new Uint8Array(fin.buffer)], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  }
+
+  // ---- libro de Excel: datos con fórmulas + gráfico de columnas nativo ----
+  function construirXLSX(c){
+    // estilos: 0 normal, 1 encabezado, 2 fecha, 3 pesos, 4 porcentaje, 5 título, 6-9 proyectado (cursiva), 10 etiqueta, 11 nota
+    const S = { head:1, date:2, money:3, pct:4, title:5, pdate:6, pmoney:7, ppct:8, ptxt:9, label:10, note:11 };
+    const filasXml = [];
+    const celda = (ref, v, st=0, formula=null) => {
+      if(v == null && !formula) return st ? `<c r="${ref}" s="${st}"/>` : "";
+      if(typeof v === "number" || formula) return `<c r="${ref}" s="${st}">${formula ? `<f>${xmlEsc(formula)}</f>` : ""}${v != null ? `<v>${v}</v>` : ""}</c>`;
+      return `<c r="${ref}" s="${st}" t="inlineStr"><is><t xml:space="preserve">${xmlEsc(v)}</t></is></c>`;
+    };
+    const fila = (r, celdas) => filasXml.push(`<row r="${r}">${celdas.join("")}</row>`);
+
+    const ahora = new Date();
+    fila(1, [celda("A1", `Ajuste de alquiler por ${c.ctx.indice}`, S.title)]);
+    fila(2, [celda("A2", `Exportado el ${ahora.toLocaleDateString("es-AR")} a las ${ahora.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",hour12:false})}. Las filas en cursiva son proyecciones, no valores publicados.`, S.note)]);
+
+    const params = parametros(c);
+    const r0 = 4, rHead = r0 + params.length + 1, rData = rHead + 1;
+    const rVigente = rData + c.idxVigente;
+    params.forEach(([k, v, tipo], i) => {
+      const r = r0 + i;
+      const valor = tipo === "money" ? celda(`B${r}`, v, S.money)
+        : tipo === "date" ? celda(`B${r}`, serial(v), S.date)
+        : tipo === "vigente" ? celda(`B${r}`, Math.round(c.vigente*100)/100, S.money, `E${rVigente}`)
+        : celda(`B${r}`, v);
+      fila(r, [celda(`A${r}`, k, S.label), valor]);
+    });
+    const rBase = r0 + 1;
+
+    fila(rHead, ["Ajuste","Fecha","Estado","Variación","Alquiler","Índices usados"].map((t,i) => celda(`${"ABCDEF"[i]}${rHead}`, t, S.head)));
+    let ultimaConMonto = null;
+    c.filas.forEach((f, i) => {
+      const r = rData + i, pr = f.proyectado;
+      let alq;
+      if(i === 0) alq = celda(`E${r}`, f.alquiler, S.money, `B${rBase}`);
+      else if(f.alquiler != null) alq = celda(`E${r}`, Math.round(f.alquiler*100)/100, pr ? S.pmoney : S.money, `E${ultimaConMonto}*(1+D${r})`);
+      else alq = celda(`E${r}`, null, S.money);
+      if(f.alquiler != null) ultimaConMonto = r;
+      fila(r, [
+        celda(`A${r}`, f.etiqueta, pr ? S.ptxt : 0),
+        celda(`B${r}`, serial(f.fecha), pr ? S.pdate : S.date),
+        celda(`C${r}`, f.estado, pr ? S.ptxt : 0),
+        celda(`D${r}`, f.variacion == null ? null : Math.round(f.variacion*1e6)/1e6, pr ? S.ppct : S.pct),
+        alq,
+        celda(`F${r}`, f.indices, pr ? S.ptxt : 0),
+      ]);
+    });
+    const rLast = rData + c.filas.length - 1;
+
+    const hoja = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
+<sheetViews><sheetView workbookViewId="0" zoomScale="100"/></sheetViews>
+<sheetFormatPr defaultRowHeight="15"/>
+<cols><col min="1" max="1" width="20" customWidth="1"/><col min="2" max="2" width="13" customWidth="1"/><col min="3" max="3" width="30" customWidth="1"/><col min="4" max="4" width="11" customWidth="1"/><col min="5" max="5" width="16" customWidth="1"/><col min="6" max="6" width="48" customWidth="1"/><col min="7" max="7" width="3" customWidth="1"/></cols>
+<sheetData>${filasXml.join("")}</sheetData>
+<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>
+<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>
+<drawing r:id="rId1"/>
+</worksheet>`;
+
+    const estilos = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="3"><numFmt numFmtId="164" formatCode="&quot;$&quot; #,##0.00"/><numFmt numFmtId="165" formatCode="0.00%"/><numFmt numFmtId="166" formatCode="dd/mm/yyyy"/></numFmts>
+<fonts count="5"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="14"/><color rgb="FF18232E"/><name val="Calibri"/><family val="2"/></font><font><i/><sz val="11"/><color rgb="FF5B6B7A"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font></fonts>
+<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1D5D8F"/><bgColor indexed="64"/></patternFill></fill></fills>
+<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="12">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
+<xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="166" fontId="3" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="164" fontId="3" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="165" fontId="3" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+
+    // Gráfico: una serie de columnas; las proyectadas van en un tono más claro
+    const n = c.filas.length;
+    const ptsCat = c.filas.map((f,i) => `<c:pt idx="${i}"><c:v>${serial(f.fecha)}</c:v></c:pt>`).join("");
+    const ptsVal = c.filas.map((f,i) => f.alquiler == null ? "" : `<c:pt idx="${i}"><c:v>${Math.round(f.alquiler*100)/100}</c:v></c:pt>`).join("");
+    const dPts = c.filas.map((f,i) => f.proyectado ? `<c:dPt><c:idx val="${i}"/><c:invertIfNegative val="0"/><c:bubble3D val="0"/><c:spPr><a:solidFill><a:srgbClr val="A9C9E4"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="1D5D8F"/></a:solidFill><a:prstDash val="dash"/></a:ln></c:spPr></c:dPt>` : "").join("");
+    const hayProy = c.filas.some(f => f.proyectado);
+    const etiquetas = n <= 14 ? `<c:dLbls><c:numFmt formatCode="&quot;$&quot; #,##0" sourceLinked="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr><c:txPr><a:bodyPr rot="-5400000" vert="horz"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="800"><a:solidFill><a:srgbClr val="404040"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="es-AR"/></a:p></c:txPr><c:dLblPos val="outEnd"/><c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>` : "";
+    const texto = (t, sz, extra="") => `<a:r><a:rPr lang="es-AR" sz="${sz}" ${extra}/><a:t>${xmlEsc(t)}</a:t></a:r>`;
+    const grafico = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<c:roundedCorners val="0"/>
+<c:chart>
+<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1300" b="1"/></a:pPr>${texto("Evolución del alquiler", 1300, 'b="1"')}</a:p>${hayProy ? `<a:p><a:pPr><a:defRPr sz="900" b="0"/></a:pPr>${texto("Columnas claras: ajustes proyectados", 900, 'b="0"')}</a:p>` : ""}</c:rich></c:tx><c:overlay val="0"/></c:title>
+<c:autoTitleDeleted val="0"/>
+<c:plotArea><c:layout/>
+<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>
+<c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>Alquiler</c:v></c:tx>
+<c:spPr><a:solidFill><a:srgbClr val="1D5D8F"/></a:solidFill></c:spPr><c:invertIfNegative val="0"/>
+${dPts}${etiquetas}
+<c:cat><c:numRef><c:f>Ajustes!$B$${rData}:$B$${rLast}</c:f><c:numCache><c:formatCode>dd/mm/yyyy</c:formatCode><c:ptCount val="${n}"/>${ptsCat}</c:numCache></c:numRef></c:cat>
+<c:val><c:numRef><c:f>Ajustes!$E$${rData}:$E$${rLast}</c:f><c:numCache><c:formatCode>"$" #,##0.00</c:formatCode><c:ptCount val="${n}"/>${ptsVal}</c:numCache></c:numRef></c:val>
+</c:ser>
+<c:gapWidth val="55"/><c:axId val="50010"/><c:axId val="50020"/>
+</c:barChart>
+<c:catAx><c:axId val="50010"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:numFmt formatCode="mm/yyyy" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900"/></a:pPr><a:endParaRPr lang="es-AR"/></a:p></c:txPr><c:crossAx val="50020"/><c:crosses val="autoZero"/><c:auto val="0"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx>
+<c:valAx><c:axId val="50020"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorGridlines><c:spPr><a:ln w="6350"><a:solidFill><a:srgbClr val="DDDDDD"/></a:solidFill></a:ln></c:spPr></c:majorGridlines><c:numFmt formatCode="&quot;$&quot; #,##0" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:ln><a:noFill/></a:ln></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900"/></a:pPr><a:endParaRPr lang="es-AR"/></a:p></c:txPr><c:crossAx val="50010"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>
+</c:plotArea>
+<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/>
+</c:chart>
+</c:chartSpace>`;
+
+    const dibujo = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+<xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>7</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>2</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>17</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>24</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="2" name="Evolución del alquiler"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId1"/></a:graphicData></a:graphic></xdr:graphicFrame>
+<xdr:clientData/></xdr:twoCellAnchor>
+</xdr:wsDr>`;
+
+    const RELS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    const PKG = "http://schemas.openxmlformats.org/package/2006/relationships";
+    return zip([
+      ["[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/><Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/></Types>`],
+      ["_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="${PKG}"><Relationship Id="rId1" Type="${RELS}/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+      ["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${RELS}"><bookViews><workbookView/></bookViews><sheets><sheet name="Ajustes" sheetId="1" r:id="rId1"/></sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`],
+      ["xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="${PKG}"><Relationship Id="rId1" Type="${RELS}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="${RELS}/styles" Target="styles.xml"/></Relationships>`],
+      ["xl/styles.xml", estilos],
+      ["xl/worksheets/sheet1.xml", hoja],
+      ["xl/worksheets/_rels/sheet1.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="${PKG}"><Relationship Id="rId1" Type="${RELS}/drawing" Target="../drawings/drawing1.xml"/></Relationships>`],
+      ["xl/drawings/drawing1.xml", dibujo],
+      ["xl/drawings/_rels/drawing1.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="${PKG}"><Relationship Id="rId1" Type="${RELS}/chart" Target="../charts/chart1.xml"/></Relationships>`],
+      ["xl/charts/chart1.xml", grafico],
+    ]);
+  }
+
+  // Guarda el archivo: en claude.ai usa el permiso de descargas; en cualquier otro sitio, una descarga común
+  async function guardar(nombre, blob){
+    const msg = $("exp-msg"); msg.hidden = false;
+    let dl = null;
+    try{ dl = window.claude && window.claude.use ? await window.claude.use("downloads") : null; }catch(e){ dl = null; }
+    if(dl){
+      try{ await dl.save({ filename:nombre, data:blob }); msg.textContent = `Se descargó ${nombre}.`; }
+      catch(e){ msg.textContent = e && e.code === "declined" ? "Descarga cancelada." : `No se pudo descargar el archivo (${(e && e.code) || "error"}).`; }
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = nombre;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    msg.textContent = `Se descargó ${nombre}.`;
+  }
+  $("exp-xlsx").onclick = () => { if(ultimoCalculo) guardar(nombreArchivo("xlsx"), construirXLSX(ultimoCalculo)); };
+  $("exp-csv").onclick = () => { if(ultimoCalculo) guardar(nombreArchivo("csv"), new Blob([construirCSV(ultimoCalculo)], {type:"text/csv;charset=utf-8"})); };
   $("refresh").onclick=()=>{ cache.icl=null; cache.ipc=null; cache.rem=null; run(); };
   run();
 })();
