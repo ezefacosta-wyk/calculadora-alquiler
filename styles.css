@@ -1,0 +1,210 @@
+/* =========================================================================
+   Calculadora de ajuste de alquiler — estilos
+   Diseño: ficha del contrato + resultado destacado + tabla de períodos.
+   - Celular (< 640px): una columna; la tabla se muestra como tarjetas.
+   - Tablet (640–1023px): una columna más ancha; el formulario en 2-3 columnas.
+   - PC (≥ 1024px): formulario fijo a la izquierda, resultados a la derecha.
+   ========================================================================= */
+
+/* ---------- tokens ---------- */
+:root {
+  --bg: #f3f5f7; --surface: #ffffff; --ink: #18232e; --muted: #5b6b7a; --line: #d6dee6;
+  --accent: #1d5d8f; --accent-soft: #e3eef7; --ok: #1f7a4d; --warn: #9a6200; --warn-soft: #fbf1dd; --err: #b3261e;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius: 10px;
+  --gap: 20px;
+  --pad: 18px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151b; --surface: #17202a; --ink: #e4ebf1; --muted: #93a4b4; --line: #2a3744;
+    --accent: #6fb0e3; --accent-soft: #1b3346; --ok: #5cc792; --warn: #e3ad4f; --warn-soft: #33281a; --err: #ff8a80;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f151b; --surface: #17202a; --ink: #e4ebf1; --muted: #93a4b4; --line: #2a3744;
+  --accent: #6fb0e3; --accent-soft: #1b3346; --ok: #5cc792; --warn: #e3ad4f; --warn-soft: #33281a; --err: #ff8a80;
+  color-scheme: dark;
+}
+
+/* ---------- base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { color-scheme: light; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg); color: var(--ink);
+  font-family: var(--body); font-size: 15px; line-height: 1.5;
+  padding: 24px 16px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1 {
+  font-family: var(--display); font-weight: 700; font-size: clamp(1.5rem, 4.5vw, 2.3rem);
+  line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -.01em;
+}
+h2 { font-family: var(--display); font-weight: 500; font-size: 1.15rem; margin: 0; }
+a { color: var(--accent); }
+
+/* ---------- estructura ---------- */
+.wrap { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--gap); }
+.layout { display: flex; flex-direction: column; gap: var(--gap); }
+.side, .main { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.lede { color: var(--muted); margin: 6px 0 0; max-width: 62ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--pad); min-width: 0; }
+
+/* ---------- encabezado y botón de tema ---------- */
+.top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.top-text { min-width: 0; }
+.tema { display: inline-flex; align-items: center; gap: 8px; flex: none; white-space: nowrap; }
+.tema svg { flex: none; }
+.tema[data-actual="light"] .ico-sol, .tema[data-actual="dark"] .ico-luna { display: none; }
+
+/* ---------- formulario ---------- */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+label, .lbl {
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+}
+input, select {
+  font: inherit; font-size: 1rem; text-transform: none; letter-spacing: 0;
+  color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 7px; padding: 10px 12px; width: 100%; min-height: 44px;
+}
+input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: inherit; font-weight: 600; border: 0; background: var(--bg); color: var(--muted); padding: 10px; cursor: pointer; min-height: 44px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.seg button small { display: block; font-weight: 400; font-size: .72rem; opacity: .85; }
+.hint { font-size: .82rem; color: var(--muted); margin: 10px 0 0; }
+
+/* ---------- resultado ---------- */
+.result { display: flex; flex-direction: column; gap: 6px; border-left: 4px solid var(--accent); }
+.eyebrow { font-size: .74rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.big { font-family: var(--display); font-weight: 700; font-size: clamp(2rem, 7vw, 3rem); line-height: 1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.delta { font-family: var(--mono); font-size: .95rem; overflow-wrap: anywhere; }
+.delta b { color: var(--accent); }
+.proj-line { font-size: .9rem; color: var(--muted); }
+.proj-line b { color: var(--ink); font-family: var(--mono); font-style: normal; }
+.status { display: flex; flex-wrap: wrap; gap: 8px; font-size: .8rem; margin-top: 4px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px;
+  background: var(--accent-soft); color: var(--ink); font-family: var(--mono); font-size: .76rem;
+  max-width: 100%; overflow-wrap: anywhere;
+}
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+.chip.err { background: var(--warn-soft); color: var(--err); }
+.dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--ok); }
+.chip.warn .dot, .chip.err .dot { background: currentColor; }
+@media (prefers-reduced-motion: no-preference) { .big { transition: opacity .2s; } }
+.loading .big { opacity: .4; }
+
+/* ---------- tabla de períodos ---------- */
+.row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn {
+  font: inherit; font-weight: 600; font-size: .85rem;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  border-radius: 7px; padding: 8px 12px; min-height: 38px; cursor: pointer;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.tablewrap { overflow-x: auto; min-width: 0; }
+table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+th {
+  text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--line);
+}
+td { padding: 9px 10px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; vertical-align: top; }
+td.num { font-family: var(--mono); text-align: right; white-space: nowrap; }
+th.num { text-align: right; }
+tr.pend td { color: var(--muted); }
+tr.cur td { background: var(--accent-soft); }
+tr.proy td { font-style: italic; }
+tr.proy td.num { color: var(--muted); }
+.tag { display: inline-block; font-size: .7rem; font-weight: 600; padding: 2px 7px; border-radius: 5px; background: var(--warn-soft); color: var(--warn); }
+.tag.proy { background: transparent; color: var(--accent); border: 1px dashed var(--accent); }
+.tag.ok { background: var(--accent-soft); color: var(--accent); }
+.sub { display: block; font-size: .75rem; color: var(--muted); font-family: var(--mono); }
+.err-box { color: var(--err); font-size: .88rem; }
+
+footer { font-size: .8rem; color: var(--muted); display: flex; flex-direction: column; gap: 6px; max-width: 110ch; }
+
+/* =========================================================================
+   Celular: hasta 639px
+   ========================================================================= */
+@media (max-width: 639px) {
+  :root { --gap: 14px; --pad: 14px; }
+  body { padding-top: 16px; padding-bottom: 32px; }
+  .grid { grid-template-columns: 1fr; gap: 12px; }
+
+  .tema { padding: 8px 10px; }
+  .tema span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .row { flex-direction: column; align-items: stretch; }
+  .acciones { display: grid; grid-template-columns: 1fr 1fr; }
+  .acciones .btn { min-height: 44px; }
+  #refresh { grid-column: 1 / -1; }
+
+  /* La tabla pasa a tarjetas: ajuste y monto arriba, índices y variación debajo */
+  .tablewrap { overflow: visible; }
+  table, tbody { display: block; }
+  thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  tbody tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "ajuste monto" "indices indices" "variacion variacion";
+    gap: 4px 12px; padding: 12px 10px; border-bottom: 1px solid var(--line);
+  }
+  tbody tr.cur { background: var(--accent-soft); border-radius: 8px; border-bottom-color: transparent; }
+  tbody td { display: block; padding: 0; border: 0; background: none !important; text-align: left; }
+  tbody td:nth-child(1) { grid-area: ajuste; font-weight: 600; }
+  tbody td:nth-child(1) .sub { display: inline; margin-left: 6px; font-weight: 400; }
+  tbody td:nth-child(2) { grid-area: indices; font-size: .8rem; color: var(--muted); }
+  tbody td:nth-child(3) { grid-area: variacion; text-align: left; white-space: normal; font-size: .82rem; }
+  tbody td:nth-child(3)::before { content: "Variación "; font-family: var(--body); color: var(--muted); }
+  tbody td:nth-child(3) .sub { display: inline; margin-left: 6px; }
+  tbody td:nth-child(4) { grid-area: monto; font-weight: 600; font-size: .95rem; color: var(--ink); }
+  tbody tr.proy td:nth-child(4), tbody tr.pend td:nth-child(4) { color: var(--muted); font-weight: 500; }
+  tbody tr.ini td:nth-child(2), tbody tr.ini td:nth-child(3) { display: none; }
+  .tag { white-space: normal; }
+}
+
+/* =========================================================================
+   Tablet: 640–1023px — formulario en una grilla de 6 columnas para que los
+   menús con textos largos (proyección, meses de IPC) tengan más ancho
+   ========================================================================= */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .grid > * { grid-column: span 2; }
+  .grid > #lbl-proy, .grid > #lbl-tasa { grid-column: span 3; }
+}
+
+/* =========================================================================
+   PC: desde 1024px — formulario a la izquierda, resultados a la derecha
+   ========================================================================= */
+@media (min-width: 1024px) {
+  body { padding-top: 36px; padding-left: 32px; padding-right: 32px; }
+  .wrap { max-width: 1240px; }
+  .layout {
+    display: grid; grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
+    align-items: start; gap: 24px;
+  }
+  .side .grid { grid-template-columns: 1fr; }
+  .result {
+    display: grid; grid-template-columns: minmax(0, 1fr); align-content: start;
+  }
+  .big { font-size: 3.2rem; }
+  td { padding: 11px 12px; }
+  th { padding: 9px 12px; }
+}
+/* El formulario queda fijo al desplazarse, solo si entra en la pantalla */
+@media (min-width: 1024px) and (min-height: 900px) {
+  .side { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); }
+}
+@media (min-width: 1440px) {
+  .wrap { max-width: 1320px; }
+  .layout { grid-template-columns: 380px minmax(0, 1fr); gap: 28px; }
+  body { font-size: 16px; }
+}

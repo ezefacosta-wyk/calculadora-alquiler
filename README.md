@@ -35,6 +35,16 @@ Las filas proyectadas aparecen en cursiva con la etiqueta *Proyectado* y la cant
 
 El archivo se arma en el navegador, sin librerías externas.
 
+## Diseño
+
+Los estilos están en `styles.css`. La página se adapta a tres tamaños:
+
+- **PC (≥ 1024 px):** formulario a la izquierda y resultados a la derecha.
+- **Tablet (640–1023 px):** una columna, con el formulario en grilla.
+- **Celular (< 640 px):** una columna; la tabla de ajustes se muestra como tarjetas.
+
+Tiene tema claro y oscuro: por defecto sigue la configuración del dispositivo, y el botón de arriba a la derecha permite elegir uno (se recuerda en el navegador).
+
 ## Uso
 
 1. Elegí el índice (ICL o IPC).
