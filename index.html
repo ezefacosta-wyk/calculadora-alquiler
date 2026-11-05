@@ -15,7 +15,7 @@
   <header class="top">
     <div class="top-text">
       <h1>Ajuste de alquiler por ICL o IPC</h1>
-      <p class="lede">Cargá el alquiler inicial y la fecha de inicio del contrato. Los índices se consultan en vivo al BCRA (ICL) y al INDEC vía datos.gob.ar (IPC).</p>
+      <p class="lede">Calculá cuánto y cuándo aumenta tu alquiler, con los índices oficiales del BCRA y el INDEC.</p>
     </div>
     <button class="btn tema" id="tema" type="button" aria-label="Cambiar tema">
       <svg class="ico-sol" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -24,89 +24,120 @@
     </button>
   </header>
 
-  <div class="layout">
-  <aside class="side">
-  <section class="panel" aria-label="Datos del contrato">
-    <div class="grid">
-      <div class="lbl">Índice de actualización
-        <div class="seg" role="group" aria-label="Índice de actualización">
-          <button type="button" id="b-icl" aria-pressed="true">ICL <small>BCRA · diario</small></button>
-          <button type="button" id="b-ipc" aria-pressed="false">IPC <small>INDEC · mensual</small></button>
-        </div>
+  <main class="layout">
+  <section class="panel result" id="res" aria-live="polite" aria-label="Resultado">
+    <div class="res-grid">
+      <div class="res-block">
+        <span class="eyebrow">Alquiler vigente</span>
+        <span class="big" id="res-monto">—</span>
+        <span class="res-sub" id="res-delta">Consultando índices…</span>
       </div>
-      <label for="monto">Alquiler inicial ($)
-        <input id="monto" type="number" inputmode="decimal" min="0" step="0.01" value="450000">
-      </label>
-      <label for="inicio">Inicio del contrato
+      <div class="res-block res-next" id="res-next" hidden>
+        <span class="eyebrow" id="next-label">Próximo ajuste</span>
+        <span class="big next" id="next-monto"></span>
+        <span class="res-sub" id="next-sub"></span>
+      </div>
+    </div>
+    <p class="proj-line" id="res-proy" hidden></p>
+    <p class="meta" id="status"></p>
+  </section>
+
+  <aside class="panel form-panel" aria-label="Datos del contrato">
+    <div class="grid">
+      <div class="field" role="group" aria-labelledby="lbl-indice">
+        <span class="field-label" id="lbl-indice">Índice de actualización</span>
+        <div class="seg">
+          <button type="button" id="b-icl" aria-pressed="true" aria-describedby="hint">ICL <small>BCRA · diario</small></button>
+          <button type="button" id="b-ipc" aria-pressed="false" aria-describedby="hint">IPC <small>INDEC · mensual</small></button>
+        </div>
+        <small class="help" id="hint"></small>
+      </div>
+      <div class="field">
+        <label class="field-label" for="monto">Alquiler inicial</label>
+        <div class="money"><span aria-hidden="true">$</span><input id="monto" type="text" inputmode="decimal" autocomplete="off" value="450.000"></div>
+      </div>
+      <div class="field">
+        <label class="field-label" for="inicio">Inicio del contrato</label>
         <input id="inicio" type="date" value="2025-10-01">
-      </label>
-      <label for="frec">Actualiza cada
+      </div>
+      <div class="field">
+        <label class="field-label" for="frec">Actualiza cada</label>
         <select id="frec">
           <option value="1">1 mes</option><option value="2">2 meses</option>
           <option value="3">3 meses</option><option value="4">4 meses</option>
           <option value="6">6 meses</option><option value="12" selected>12 meses</option>
         </select>
-      </label>
-      <label for="dur">Duración del contrato
+      </div>
+      <div class="field">
+        <label class="field-label" for="dur">Duración del contrato</label>
         <select id="dur">
           <option value="12">12 meses</option><option value="24">24 meses</option>
           <option value="36" selected>36 meses</option><option value="48">48 meses</option>
         </select>
-      </label>
-      <label for="desfase" id="lbl-desfase" hidden>Meses de IPC usados
-        <select id="desfase">
-          <option value="0">Los del período (hasta el mes previo al ajuste)</option>
-          <option value="1">Desfasados 1 mes (último publicado al ajustar)</option>
-          <option value="2">Desfasados 2 meses</option>
+      </div>
+      <div class="field" id="lbl-desfase" hidden>
+        <label class="field-label" for="desfase">Meses de IPC usados</label>
+        <select id="desfase" aria-describedby="help-desfase">
+          <option value="0">Los del período</option>
+          <option value="1">1 mes de desfase</option>
+          <option value="2">2 meses de desfase</option>
         </select>
-      </label>
-      <label for="proy" id="lbl-proy">Proyección de ajustes futuros
-        <select id="proy">
-          <option value="rem" selected>Expectativa de inflación (REM del BCRA)</option>
-          <option value="tendencia">Tendencia de los últimos 3 meses</option>
+        <small class="help" id="help-desfase">Muchos contratos usan el último IPC publicado al ajustar: 1 mes de desfase.</small>
+      </div>
+      <div class="field" id="lbl-proy">
+        <label class="field-label" for="proy">Proyección de ajustes futuros</label>
+        <select id="proy" aria-describedby="hint-proy">
+          <option value="rem" selected>Inflación esperada (REM)</option>
+          <option value="tendencia">Tendencia de 3 meses</option>
           <option value="propia">Tasa mensual propia</option>
           <option value="no">Sin proyección</option>
         </select>
-      </label>
-      <label for="tasa" id="lbl-tasa" hidden>Tasa mensual supuesta (%)
+        <small class="help" id="hint-proy"></small>
+      </div>
+      <div class="field" id="lbl-tasa" hidden>
+        <label class="field-label" for="tasa">Tasa mensual supuesta (%)</label>
         <input id="tasa" type="number" inputmode="decimal" min="-5" max="50" step="0.1" value="2">
-      </label>
+      </div>
     </div>
-    <p class="hint" id="hint-proy"></p>
-    <p class="hint" id="hint">Ejemplo precargado. ICL: se divide el valor del índice el día del ajuste por el del día de inicio del período.</p>
-  </section>
   </aside>
 
-  <main class="main">
-  <section class="panel result" id="res" aria-live="polite">
-    <span class="eyebrow" id="res-label">Alquiler vigente</span>
-    <span class="big" id="res-monto">—</span>
-    <span class="delta" id="res-delta">Consultando índices…</span>
-    <span class="proj-line" id="res-proy" hidden></span>
-    <div class="status" id="status"></div>
-  </section>
-
-  <section class="panel">
-    <div class="row"><h2>Períodos del contrato</h2>
+  <section class="panel tabla" aria-labelledby="tit-evol">
+    <div class="row"><h2 id="tit-evol">Evolución del alquiler</h2>
       <div class="acciones">
-        <button class="btn" id="exp-xlsx" type="button" disabled>Exportar Excel</button>
-        <button class="btn" id="exp-csv" type="button" disabled>Exportar CSV</button>
-        <button class="btn" id="refresh" type="button">Actualizar datos</button>
+        <button class="btn quiet" id="refresh" type="button" title="Volver a consultar los índices">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Actualizar
+        </button>
+        <details class="menu" id="menu-exp">
+          <summary class="btn">Exportar</summary>
+          <div class="menu-list">
+            <button type="button" id="exp-xlsx" disabled>Excel con gráfico <small>.xlsx</small></button>
+            <button type="button" id="exp-csv" disabled>Datos sin formato <small>.csv</small></button>
+          </div>
+        </details>
       </div>
     </div>
     <p class="hint" id="exp-msg" aria-live="polite" hidden></p>
-    <div class="tablewrap"><table>
-      <thead><tr><th>Ajuste</th><th>Índices usados</th><th class="num">Variación</th><th class="num">Nuevo alquiler</th></tr></thead>
-      <tbody id="tbody"></tbody>
+    <div class="grafico" id="grafico" role="img" aria-label="Gráfico de la evolución del alquiler"></div>
+    <div class="tablewrap"><table role="table" aria-label="Ajustes del contrato">
+      <thead role="rowgroup"><tr role="row"><th role="columnheader">Ajuste</th><th role="columnheader">Índices usados</th><th class="num" role="columnheader">Variación</th><th class="num" role="columnheader">Nuevo alquiler</th></tr></thead>
+      <tbody id="tbody" role="rowgroup"></tbody>
     </table></div>
     <p class="err-box" id="err" hidden></p>
   </section>
   </main>
-  </div>
 
   <footer>
-    <span>Fuentes, en orden de uso. ICL: <a href="https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables.asp" target="_blank" rel="noopener">API del BCRA (variable 40)</a> y, si no responde, una copia diaria guardada en este sitio. IPC: <a href="https://datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26" target="_blank" rel="noopener">INDEC vía datos.gob.ar</a>, inflación mensual del BCRA (variable 27), <a href="https://argentinadatos.com/" target="_blank" rel="noopener">ArgentinaDatos</a> y la copia diaria. Si se usa un respaldo, aparece marcado en amarillo. La proyección usa la <a href="https://www.bcra.gob.ar/PublicacionesEstadisticas/Relevamiento_Expectativas_de_Mercado.asp" target="_blank" rel="noopener">mediana del REM del BCRA</a> (variable 29) convertida a tasa mensual.</span>
-    <span>El INDEC publica el IPC de cada mes a mediados del mes siguiente; hasta entonces el ajuste que lo necesita figura como pendiente. El cálculo es orientativo: lo que vale es lo pactado en el contrato.</span>
+    <details class="fuentes">
+      <summary>Fuentes y método de cálculo</summary>
+      <ul>
+        <li><b>ICL:</b> <a href="https://www.bcra.gob.ar/PublicacionesEstadisticas/Principales_variables.asp" target="_blank" rel="noopener">API del BCRA (variable 40)</a>; si no responde, una copia diaria guardada en este sitio. El ajuste divide el valor del índice el día del ajuste por el del día de inicio del período.</li>
+        <li><b>IPC:</b> <a href="https://datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26" target="_blank" rel="noopener">INDEC vía datos.gob.ar</a>; respaldos: inflación mensual del BCRA (variable 27), <a href="https://argentinadatos.com/" target="_blank" rel="noopener">ArgentinaDatos</a> y la copia diaria. Se acumula la inflación de los meses del período. El INDEC publica cada mes a mediados del mes siguiente; hasta entonces el ajuste figura como pendiente.</li>
+        <li><b>Proyección:</b> <a href="https://www.bcra.gob.ar/PublicacionesEstadisticas/Relevamiento_Expectativas_de_Mercado.asp" target="_blank" rel="noopener">mediana del REM del BCRA</a> (variable 29) convertida a tasa mensual, la tendencia de los últimos 3 meses del índice o una tasa que cargues vos.</li>
+        <li>Si se usa una fuente de respaldo, aparece marcada en amarillo junto al resultado.</li>
+      </ul>
+    </details>
+    <p>El cálculo es orientativo: lo que vale es lo pactado en el contrato.</p>
   </footer>
 </div>
 
@@ -123,6 +154,9 @@
   let tipo = "ICL";
   const cache = { icl:null, iclFrom:null, ipc:null, rem:null };
   let ultimoCalculo = null, ctxExport = null;
+  // Monto en formato argentino: "450.000" o "450.000,50"
+  const montoBase = () => { const v = parseFloat(String($("monto").value).replace(/[^\d,.-]/g,"").replace(/\./g,"").replace(",", ".")); return Number.isFinite(v) && v > 0 ? v : 0; };
+  const fmtMonto = v => v.toLocaleString("es-AR", { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 });
 
   // ---------- fechas (todas en UTC, formato YYYY-MM-DD) ----------
   const toD = s => { const [y,m,d] = s.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)); };
@@ -360,8 +394,8 @@
 
   // ---------- render ----------
   function render(periods, statusChips, proy){
-    const base=+$("monto").value||0; let monto=base; let vigente=base, vigenteDesde=$("inicio").value, ultimoFactor=null, proximo=null, ultimoProy=null;
-    const rows=[`<tr class="ini"><td>Inicio<span class="sub">${fmtDate($("inicio").value)}</span></td><td>—</td><td class="num">—</td><td class="num">${ars.format(base)}</td></tr>`];
+    const base=montoBase(); let monto=base; let vigente=base, vigenteDesde=$("inicio").value, ultimoFactor=null, proximo=null, ultimoProy=null;
+    const rows=[`<tr class="ini"><td>Inicio<span class="sub">${fmtDate($("inicio").value)}</span></td><td>—</td><td class="num">—</td><td class="num monto">${ars.format(base)}</td></tr>`];
     let idxVigente = 0;
     const filas = [{ etiqueta:"Inicio", fecha:$("inicio").value, estado:"Contrato", indices:"", variacion:null, alquiler:base }];
     periods.forEach((p,i) => {
@@ -393,30 +427,50 @@
         variacion: (!p.err && !p.pend) ? p.factor-1 : null,
         alquiler: (!p.err && !p.pend) ? monto : null,
       });
-      rows.push(`<tr class="${cls}"><td>${p.k}º ajuste<span class="sub">${fmtDate(p.fecha)}</span></td><td>${p.detalle||""} ${tag}</td><td class="num">${varTxt}</td><td class="num">${montoTxt}</td></tr>`);
+      rows.push(`<tr class="${cls}"><td>${p.k}º ajuste<span class="sub">${fmtDate(p.fecha)}</span></td><td>${p.detalle||""} ${tag}</td><td class="num">${varTxt}</td><td class="num monto">${montoTxt}</td></tr>`);
     });
     $("tbody").innerHTML=rows.join("");
+    $("tbody").querySelectorAll("tr").forEach(tr => { tr.setAttribute("role","row"); tr.querySelectorAll("td").forEach(td => td.setAttribute("role","cell")); });
     ultimoCalculo = { filas, idxVigente, vigente, vigenteDesde, base, ctx: ctxExport, proy };
     $("exp-xlsx").disabled = $("exp-csv").disabled = false;
     const trs=[...$("tbody").querySelectorAll("tr")];
     if(trs[idxVigente]) trs[idxVigente].classList.add("cur");
 
     $("res-monto").textContent=ars.format(vigente);
-    $("res-label").textContent = `Alquiler vigente desde el ${fmtDate(vigenteDesde)}`;
-    let delta = ultimoFactor ? `Último ajuste: <b>${pct(ultimoFactor-1)}</b>` : "Todavía no hubo ajustes.";
+    $("res-delta").innerHTML = ultimoFactor
+      ? `Desde el ${fmtDate(vigenteDesde)} · último ajuste <b class="up">${pct(ultimoFactor-1)}</b>`
+      : `Desde el inicio del contrato, ${fmtDate(vigenteDesde)} · sin ajustes todavía`;
+
+    const nb = $("res-next");
     if(proximo){
-      const etiqueta = proximo.proyectado ? "proyectado" : "estimado";
-      const est = proximo.nuevo ? `${ars.format(proximo.nuevo)} (${pct(proximo.factor-1)}, ${etiqueta})` : (proximo.pend||"");
-      delta += ` · ${proximo.vencido ? "Ajuste" : "Próximo"} ${fmtDate(proximo.fecha)}: ${est}`;
+      const falta = cuantoFalta(proximo.fecha);
+      nb.classList.toggle("real", !proximo.proyectado && !proximo.pend);
+      $("next-label").textContent = proximo.vencido ? `Ajuste del ${fmtDate(proximo.fecha)}` : `Próximo ajuste · ${fmtDate(proximo.fecha)}`;
+      if(proximo.nuevo){
+        $("next-monto").textContent = ars.format(proximo.nuevo);
+        const badge = proximo.proyectado ? `<span class="badge">Proyectado</span>` : `<span class="badge solid">Estimado</span>`;
+        $("next-sub").innerHTML = `<b class="up">${pct(proximo.factor-1)}</b> · ${proximo.vencido ? "ya corresponde, falta el dato oficial" : falta} ${badge}`;
+      } else {
+        $("next-monto").textContent = "Pendiente";
+        $("next-sub").innerHTML = `${proximo.pend}${proximo.factor ? ` · acumulado parcial <b>${pct(proximo.factor-1)}</b>` : ""} · ${falta}`;
+      }
+      nb.hidden = false;
+    } else {
+      const fin = addMonths($("inicio").value, +$("dur").value);
+      nb.classList.add("real");
+      $("next-label").textContent = "Próximo ajuste";
+      $("next-monto").textContent = "No hay más";
+      $("next-sub").textContent = `El contrato termina el ${fmtDate(fin)}.`;
+      nb.hidden = false;
     }
-    $("res-delta").innerHTML=delta;
 
     const linea = $("res-proy");
     if(proy && ultimoProy && ultimoProy.k !== (proximo && proximo.k)){
       const total = ultimoProy.nuevo / vigente - 1;
-      linea.innerHTML = `Último ajuste del contrato, ${fmtDate(ultimoProy.fecha)}: <b>${ars.format(ultimoProy.nuevo)}</b> (${pct(total)} sobre el alquiler actual, proyectado)`;
+      linea.innerHTML = `Último ajuste del contrato, ${fmtDate(ultimoProy.fecha)}: <b>${ars.format(ultimoProy.nuevo)}</b>, ${pct(total)} sobre el alquiler actual (proyectado).`;
       linea.hidden = false;
     } else linea.hidden = true;
+    dibujarGrafico();
     $("status").innerHTML=statusChips.join("");
   }
 
@@ -450,24 +504,24 @@
       if(id!==runId) return;
       $("err").hidden=false;
       $("err").textContent = e.fallas
-        ? `No respondió ninguna fuente (${e.fallas.join("; ")}). Probá de nuevo en unos minutos con "Actualizar datos".`
+        ? `No respondió ninguna fuente (${e.fallas.join("; ")}). Probá de nuevo en unos minutos con "Actualizar".`
         : `No se pudieron procesar los datos: ${e.message}.`;
       $("res-delta").textContent="Sin datos de índices.";
-      $("res-proy").hidden=true;
+      $("res-proy").hidden=true; $("res-next").hidden=true; $("grafico").hidden=true;
       ultimoCalculo = null; $("exp-xlsx").disabled = $("exp-csv").disabled = true;
       $("status").innerHTML=`<span class="chip err"><span class="dot"></span>Fuente no disponible</span>`;
     }finally{ if(id===runId) $("res").classList.remove("loading"); }
   }
 
   const TEXTO_PROY = {
-    rem: "Los ajustes futuros se estiman con la mediana de inflación esperada para los próximos 12 meses que releva el BCRA entre analistas (REM).",
-    tendencia: "Los ajustes futuros repiten el ritmo promedio del índice en los últimos 3 meses.",
-    propia: "Los ajustes futuros se estiman con la tasa mensual que cargues.",
+    rem: "Inflación que esperan los analistas para los próximos 12 meses, según el BCRA.",
+    tendencia: "Repite el ritmo promedio del índice en los últimos 3 meses.",
+    propia: "Usa la tasa mensual que cargues abajo.",
     no: "Solo se muestran ajustes con datos publicados.",
   };
   function setProy(){
     $("lbl-tasa").hidden = $("proy").value !== "propia";
-    $("hint-proy").textContent = TEXTO_PROY[$("proy").value] + ($("proy").value !== "no" ? " Es una estimación, no un valor garantizado." : "");
+    $("hint-proy").textContent = TEXTO_PROY[$("proy").value];
   }
   $("proy").addEventListener("change", () => { setProy(); run(); });
   $("tasa").addEventListener("input", () => { clearTimeout(window.__tt); window.__tt = setTimeout(run, 300); });
@@ -478,15 +532,87 @@
     $("b-icl").setAttribute("aria-pressed", t==="ICL"); $("b-ipc").setAttribute("aria-pressed", t==="IPC");
     $("lbl-desfase").hidden = t!=="IPC";
     $("hint").textContent = t==="ICL"
-      ? "ICL: se divide el valor del índice el día del ajuste por el del día de inicio del período."
-      : "IPC: se acumula la inflación mensual de los meses del período (índice del último mes ÷ índice del mes anterior al primero).";
+      ? "Compara el índice del día de inicio del período con el del día del ajuste."
+      : "Acumula la inflación mensual de los meses del período.";
     if(t==="IPC" && $("frec").value==="12") $("frec").value="3";
     run();
   }
+  $("hint").textContent = "Compara el índice del día de inicio del período con el del día del ajuste.";
   $("b-icl").onclick=()=>setTipo("ICL");
   $("b-ipc").onclick=()=>setTipo("IPC");
   ["monto","inicio","frec","dur","desfase"].forEach(id=>$(id).addEventListener("change",run));
   $("monto").addEventListener("input",()=>{ clearTimeout(window.__t); window.__t=setTimeout(run,300); });
+  $("monto").addEventListener("blur",()=>{ const v = montoBase(); if(v) $("monto").value = fmtMonto(v); });
+
+
+  // ---------- cuánto falta para una fecha ----------
+  function cuantoFalta(fecha){
+    const d = Math.round(diasEntre(today(), fecha));
+    if(d <= 0) return "hoy";
+    if(d < 45) return d === 1 ? "mañana" : `en ${d} días`;
+    const m = Math.round(d / 30.44);
+    return m === 1 ? "en 1 mes" : `en ${m} meses`;
+  }
+
+  // ---------- gráfico de escalones: cada período es un tramo con su alquiler ----------
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const abreviar = v => v >= 1e6
+    ? `$ ${(v/1e6).toLocaleString("es-AR",{maximumFractionDigits:2})} M`
+    : `$ ${Math.round(v/1e3).toLocaleString("es-AR")} mil`;
+  function escalaLinda(max){
+    const paso0 = max / 4, mag = Math.pow(10, Math.floor(Math.log10(paso0)));
+    const paso = [1, 2, 2.5, 5, 10].map(f => f*mag).find(p => p >= paso0);
+    return { paso, tope: Math.ceil(max / paso) * paso };
+  }
+  function dibujarGrafico(){
+    const box = $("grafico"); const c = ultimoCalculo;
+    if(!c){ box.hidden = true; return; }
+    const tramos = [];
+    const fin = addMonths($("inicio").value, +$("dur").value);
+    const conMonto = c.filas.filter(f => f.alquiler != null);
+    conMonto.forEach((f, i) => tramos.push({ desde:f.fecha, hasta: i+1 < conMonto.length ? conMonto[i+1].fecha : fin, v:f.alquiler, proy:!!f.proyectado }));
+    if(tramos.length < 2){ box.hidden = true; return; }
+    box.hidden = false;
+    const W = Math.max(280, box.clientWidth || 600), angosto = W < 520;
+    const H = angosto ? 190 : 230, m = { l: angosto ? 62 : 72, r: 8, t: 22, b: 26 };
+    const x0 = toD(tramos[0].desde), x1 = toD(fin);
+    const X = d => m.l + (toD(d) - x0) / (x1 - x0) * (W - m.l - m.r);
+    const { paso, tope } = escalaLinda(Math.max(...tramos.map(t => t.v)));
+    const Y = v => m.t + (1 - v / tope) * (H - m.t - m.b);
+    const el = (tag, attrs, txt) => { const n = document.createElementNS(SVGNS, tag); for(const k in attrs) n.setAttribute(k, attrs[k]); if(txt != null) n.textContent = txt; return n; };
+    const svg = el("svg", { viewBox:`0 0 ${W} ${H}`, width:W, height:H, "aria-hidden":"true" });
+    for(let v = 0; v <= tope + 1e-6; v += paso){
+      svg.append(el("line", { class:"g-grid", x1:m.l, x2:W-m.r, y1:Y(v), y2:Y(v) }));
+      svg.append(el("text", { class:"g-axis", x:m.l-8, y:Y(v)+4, "text-anchor":"end" }, v === 0 ? "$ 0" : abreviar(v)));
+    }
+    tramos.forEach(t => {
+      const xa = X(t.desde) + 1, xb = X(t.hasta) - 1, ancho = Math.max(1, xb - xa);
+      svg.append(el("rect", { class: t.proy ? "g-proy" : "g-real", x:xa, y:Y(t.v), width:ancho, height:Y(0)-Y(t.v), rx:2 }));
+      if(ancho > (angosto ? 52 : 62)) svg.append(el("text", { class:"g-val", x:xa + ancho/2, y:Y(t.v) - 6, "text-anchor":"middle" }, abreviar(t.v)));
+    });
+    // años en el eje horizontal
+    const a0 = +tramos[0].desde.slice(0,4), a1 = +fin.slice(0,4);
+    const anios = []; for(let a = a0; a <= a1; a++) anios.push(a);
+    anios.forEach(a => {
+      const f = a === a0 ? tramos[0].desde : `${a}-01-01`; if(f > fin) return;
+      const x = X(f); if(a !== a0 && (x - X(tramos[0].desde) < 34 || x > W - m.r - 30)) return;
+      svg.append(el("text", { class:"g-axis", x:x + 2, y:H - 8 }, a === a0 && tramos[0].desde.slice(5,7) !== "01" ? monthShort(tramos[0].desde.slice(0,7)) : String(a)));
+    });
+    // línea de hoy
+    const hoy = today();
+    if(hoy > tramos[0].desde && hoy < fin){
+      const x = X(hoy);
+      svg.append(el("line", { class:"g-hoy", x1:x, x2:x, y1:m.t - 14, y2:Y(0) }));
+      svg.append(el("text", { class:"g-hoy-txt", x: x + 4, y: m.t - 6 }, "Hoy"));
+    }
+    box.replaceChildren(svg);
+    const hayProy = tramos.some(t => t.proy);
+    const ley = document.createElement("div"); ley.className = "leyenda";
+    ley.innerHTML = `<span><i></i>Con datos publicados</span>${hayProy ? `<span><i class="p"></i>Proyectado</span>` : ""}`;
+    box.append(ley);
+    box.setAttribute("aria-label", `Gráfico: el alquiler pasa de ${ars.format(tramos[0].v)} a ${ars.format(tramos[tramos.length-1].v)} al final del contrato${hayProy ? ", con tramos proyectados" : ""}.`);
+  }
+  if(window.ResizeObserver){ let w0 = 0; new ResizeObserver(es => { const w = Math.round(es[0].contentRect.width); if(w && w !== w0){ w0 = w; dibujarGrafico(); } }).observe($("grafico")); }
 
   // ---------- exportación ----------
   const DESFASES = ["Los del período", "Desfasados 1 mes", "Desfasados 2 meses"];
@@ -703,6 +829,11 @@ ${dPts}${etiquetas}
     setTimeout(() => URL.revokeObjectURL(url), 4000);
     msg.textContent = `Se descargó ${nombre}.`;
   }
+  const cerrarMenu = () => { $("menu-exp").open = false; };
+  document.addEventListener("click", e => { if(!$("menu-exp").contains(e.target)) cerrarMenu(); });
+  document.addEventListener("keydown", e => { if(e.key === "Escape" && $("menu-exp").open){ cerrarMenu(); $("menu-exp").querySelector("summary").focus(); } });
+  $("exp-xlsx").addEventListener("click", cerrarMenu);
+  $("exp-csv").addEventListener("click", cerrarMenu);
   $("exp-xlsx").onclick = () => { if(ultimoCalculo) guardar(nombreArchivo("xlsx"), construirXLSX(ultimoCalculo)); };
   $("exp-csv").onclick = () => { if(ultimoCalculo) guardar(nombreArchivo("csv"), new Blob([construirCSV(ultimoCalculo)], {type:"text/csv;charset=utf-8"})); };
   // ---------- tema claro / oscuro ----------
